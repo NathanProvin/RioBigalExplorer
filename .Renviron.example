@@ -1,0 +1,13 @@
+# Copy to .Renviron (git-ignored) at the project root, then restart R.
+# Leave DATA_SOURCE unset (or "local") to read the xlsx files from ./data instead.
+DATA_SOURCE=drive
+GDRIVE_FOLDER_ID=1L2Zo28JPAUVWeg87w9d6SFSrRVM9rQgn
+
+# Local development: your own Google account (browser sign-in once, token cached in .secrets/)
+GDRIVE_AUTH=user
+# optional: the Google account that can see the folder
+# GDRIVE_EMAIL=you@example.com
+
+# Production server: service account instead
+# GDRIVE_AUTH=sa
+# GDRIVE_SA_JSON=<path to the key file, or the JSON text itself>

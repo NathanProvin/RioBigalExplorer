@@ -19,3 +19,7 @@ rsconnect/
 Thumbs.db
 desktop.ini
 .vscode/
+
+# Google OAuth token cache (local development against Drive)
+.secrets/
+!.Renviron.example

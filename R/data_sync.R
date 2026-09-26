@@ -1,10 +1,13 @@
 # Where the xlsx files come from (local folder or shared Google Drive folder), per-process parse cache,
 # camera-station persistence, the unified observation table and data-quality issues.
 #
-# Env vars:
+# Env vars (see .Renviron.example):
 #   DATA_SOURCE      "local" (default, reads ./data) or "drive"
 #   GDRIVE_FOLDER_ID id of the shared Drive folder (drive mode)
-#   GDRIVE_SA_JSON   service-account key: a file path or the JSON text itself (drive mode)
+#   GDRIVE_AUTH      "user" = your own Google account (browser sign-in once, token cached in .secrets/)
+#                    "sa"   = service account (production); default when GDRIVE_SA_JSON is set
+#   GDRIVE_EMAIL     optional, with "user": which Google account to use
+#   GDRIVE_SA_JSON   with "sa": service-account key, a file path or the JSON text itself
 
 DATA_SOURCE <- Sys.getenv("DATA_SOURCE", "local")
 LOCAL_DIR   <- "data"
@@ -15,20 +18,40 @@ drive_ready <- local({
   done <- FALSE
   function() {
     if (done) return(invisible(TRUE))
-    key <- Sys.getenv("GDRIVE_SA_JSON")
-    if (!file.exists(key)) { f <- tempfile(fileext = ".json"); writeLines(key, f); key <- f }
-    googledrive::drive_auth(path = key)
+    mode <- Sys.getenv("GDRIVE_AUTH", if (nzchar(Sys.getenv("GDRIVE_SA_JSON"))) "sa" else "user")
+    if (mode == "sa") {
+      key <- Sys.getenv("GDRIVE_SA_JSON")
+      if (!file.exists(key)) { f <- tempfile(fileext = ".json"); writeLines(key, f); key <- f }
+      googledrive::drive_auth(path = key)
+    } else {
+      email <- Sys.getenv("GDRIVE_EMAIL")
+      googledrive::drive_auth(email = if (nzchar(email)) email else TRUE, cache = ".secrets")
+    }
     done <<- TRUE
   }
 })
-drive_folder <- function() googledrive::as_id(Sys.getenv("GDRIVE_FOLDER_ID"))
+drive_folder <- function() {
+  id <- Sys.getenv("GDRIVE_FOLDER_ID")
+  if (!nzchar(id)) stop("GDRIVE_FOLDER_ID is not set (see .Renviron.example)", call. = FALSE)
+  googledrive::as_id(id)
+}
+
+# List the Drive folder; a clear message when the signed-in account can't see it
+drive_list <- function() {
+  ls <- tryCatch(googledrive::drive_ls(drive_folder()), error = function(e)
+    stop(sprintf("Google Drive folder not accessible with the signed-in account (%s). Check GDRIVE_FOLDER_ID and that the folder is shared with this account.",
+                 conditionMessage(e)), call. = FALSE))
+  if (!nrow(ls)) stop("The Google Drive folder is empty or not shared with the signed-in account.", call. = FALSE)
+  ls
+}
 
 # Returns the local directory holding the current xlsx files. In drive mode only changed files are downloaded.
 sync_files <- function() {
   if (DATA_SOURCE != "drive") return(LOCAL_DIR)
   drive_ready()
   dir.create(CACHE_DIR, showWarnings = FALSE)
-  ls <- googledrive::drive_ls(drive_folder(), pattern = "\\.xlsx$")
+  ls <- drive_list()
+  ls <- ls[grepl("\\.xlsx$", ls$name, ignore.case = TRUE), ]
   for (i in seq_len(nrow(ls))) {
     dest <- file.path(CACHE_DIR, ls$name[i])
     remote <- as.POSIXct(ls$drive_resource[[i]]$modifiedTime, format = "%Y-%m-%dT%H:%M:%OS", tz = "UTC")
@@ -46,7 +69,7 @@ read_stations <- function() {
   path <- if (DATA_SOURCE == "drive") file.path(CACHE_DIR, STATIONS) else file.path(LOCAL_DIR, STATIONS)
   if (DATA_SOURCE == "drive") {
     drive_ready()
-    f <- googledrive::drive_ls(drive_folder(), pattern = paste0("^", STATIONS, "$"))
+    f <- drive_list(); f <- f[f$name == STATIONS, ]
     if (!nrow(f)) return(empty)
     dir.create(CACHE_DIR, showWarnings = FALSE)
     googledrive::drive_download(f[1, ], path = path, overwrite = TRUE)
@@ -59,7 +82,14 @@ read_stations <- function() {
 write_stations <- function(st) {
   path <- if (DATA_SOURCE == "drive") file.path(CACHE_DIR, STATIONS) else file.path(LOCAL_DIR, STATIONS)
   utils::write.csv(st, path, row.names = FALSE)
-  if (DATA_SOURCE == "drive") googledrive::drive_put(path, path = drive_folder(), name = STATIONS)
+  if (DATA_SOURCE == "drive") tryCatch(
+    googledrive::drive_put(path, path = drive_folder(), name = STATIONS),  # updates the file if it exists, else creates it
+    error = function(e) {
+      # service accounts have no storage quota outside Shared Drives: they can update stations.csv but not create it
+      if (grepl("quota", conditionMessage(e), ignore.case = TRUE))
+        stop("Create an empty stations.csv (header: camera_id,lat,lon,set_at) in the Drive folder once, then try again.", call. = FALSE)
+      stop(e)
+    })
   invisible(st)
 }
 

@@ -1,4 +1,5 @@
 # Run from project root: Rscript tests/test_clean.R
+Sys.setenv(DATA_SOURCE = "local")  # checks run on ./data, whatever .Renviron says
 source("R/geo.R"); source("R/data_clean.R"); source("R/data_sync.R")
 near <- function(a, b, tol = 1e-3) isTRUE(all(abs(a - b) < tol))
 

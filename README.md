@@ -93,18 +93,38 @@ install.packages(c("shiny", "bslib", "bsicons", "leaflet", "leaflet.extras", "ec
 
 To run the checks: `Rscript tests/test_clean.R`.
 
-## Deploy and team sync (Google Drive + Posit Connect Cloud)
+## Team data on Google Drive
 
-1. Put the xlsx files in one Google Drive folder. The folder id is the last part of its URL.
-2. In Google Cloud Console, enable the *Google Drive API* and create a *service account* with a JSON key.
-3. Share the folder with the service account's e-mail as **Editor**. Editor access is needed to save camera positions.
-4. Deploy `app.R` on [connect.posit.cloud](https://connect.posit.cloud) with these secret variables:
+The team keeps the xlsx files in a shared Google Drive folder. The app reads them from there, and saves camera positions back to it as `stations.csv`.
+
+- Only files modified since the last read are downloaded.
+- Press ↻ in the app after uploading new versions.
+
+### Local development against Drive (your own Google account)
+
+1. Copy `.Renviron.example` to `.Renviron` at the project root. It is git-ignored and already holds the folder id.
+2. Run `Rscript tools/check_drive.R` once.
+   - A browser opens: sign in with the Google account that can see the folder.
+   - The token is cached in `.secrets/` (git-ignored).
+   - The script lists the folder, checks that each of the 5 workbooks is found, downloads and parses them, and tests writing `stations.csv`.
+3. Run `shiny::runApp()`. It now reads from Drive.
+
+To go back to local files, set `DATA_SOURCE=local` or delete `.Renviron`.
+
+### Production (service account + Posit Connect Cloud, `prod` branch)
+
+1. In Google Cloud Console, enable the *Google Drive API*, then create a *service account* with a JSON key.
+2. Share the Drive folder with the service account's e-mail:
+   - as **Editor**, or
+   - as **Content manager** if the folder is a Shared Drive.
+3. Service accounts can't create files in a normal shared folder, because they have no storage quota. `stations.csv` must therefore exist in the folder before deployment. Running `tools/check_drive.R` once with your own account creates it.
+4. Deploy `app.R` from the `prod` branch on [connect.posit.cloud](https://connect.posit.cloud) with these secret variables:
    - `DATA_SOURCE=drive`
    - `GDRIVE_FOLDER_ID=<folder id>`
+   - `GDRIVE_AUTH=sa`
    - `GDRIVE_SA_JSON=<content of the JSON key>`
-5. The team updates the xlsx files in Drive and presses ↻ in the app. Only changed files are downloaded again.
 
-Never commit the JSON key.
+Never commit the JSON key, `.Renviron` or `.secrets/`.
 
 ## Project structure
 
