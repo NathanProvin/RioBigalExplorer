@@ -1,0 +1,21 @@
+# field data: private, synced from Google Drive in production
+data/
+stations.csv
+
+# secrets (Google service-account keys, env files)
+.Renviron
+*.json
+!i18n/*.json
+
+# R / RStudio / deployment
+.Rhistory
+.RData
+.Rproj.user/
+rsconnect/
+*.Rproj
+
+# OS / editor
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
