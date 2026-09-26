@@ -1,25 +1,23 @@
 # field data: private, synced from Google Drive in production
 data/
 stations.csv
-
 # secrets (Google service-account keys, env files)
 .Renviron
 *.json
 !i18n/*.json
-
+!manifest.json
 # R / RStudio / deployment
 .Rhistory
 .RData
 .Rproj.user/
 rsconnect/
 *.Rproj
-
 # OS / editor
 .DS_Store
 Thumbs.db
 desktop.ini
 .vscode/
-
 # Google OAuth token cache (local development against Drive)
 .secrets/
 !.Renviron.example
+.secrets

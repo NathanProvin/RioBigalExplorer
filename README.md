@@ -118,11 +118,14 @@ To go back to local files, set `DATA_SOURCE=local` or delete `.Renviron`.
    - as **Editor**, or
    - as **Content manager** if the folder is a Shared Drive.
 3. Service accounts can't create files in a normal shared folder, because they have no storage quota. `stations.csv` must therefore exist in the folder before deployment. Running `tools/check_drive.R` once with your own account creates it.
-4. Deploy `app.R` from the `prod` branch on [connect.posit.cloud](https://connect.posit.cloud) with these secret variables:
-   - `DATA_SOURCE=drive`
-   - `GDRIVE_FOLDER_ID=<folder id>`
-   - `GDRIVE_AUTH=sa`
-   - `GDRIVE_SA_JSON=<content of the JSON key>`
+4. Deploy on [connect.posit.cloud](https://connect.posit.cloud):
+   - Choose *Publish → Shiny*, repository `NathanProvin/RioBigalExplorer`, branch **`prod`**, primary file **`app.R`**.
+   - Add these secret variables:
+     - `DATA_SOURCE=drive`
+     - `GDRIVE_FOLDER_ID=<folder id>`
+     - `GDRIVE_AUTH=sa`
+     - `GDRIVE_SA_JSON=<content of the JSON key>`
+5. `manifest.json` lists the exact R packages to install. After adding or updating a package, regenerate it with `Rscript tools/write_manifest.R` and commit it. Connect Cloud redeploys when the `prod` branch is pushed.
 
 Never commit the JSON key, `.Renviron` or `.secrets/`.
 
