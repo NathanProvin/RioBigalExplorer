@@ -95,10 +95,15 @@ write_stations <- function(st) {
 
 .parsed <- new.env()
 # Parse one file, memoised on path + mtime + size so a refresh only re-reads files that changed.
+# Messages about skipped (oversized) sheets are cached with the result and replayed into SKIPPED on every call.
 parse_cached <- function(reader, path, ...) {
   key <- paste(path, file.mtime(path), file.size(path))
-  if (!is.null(.parsed[[key]])) return(.parsed[[key]])
-  .parsed[[key]] <- reader(path, ...)
+  if (is.null(.parsed[[key]])) {
+    n0 <- length(SKIPPED$msgs)
+    res <- reader(path, ...)
+    .parsed[[key]] <- list(res = res, msgs = utils::tail(SKIPPED$msgs, length(SKIPPED$msgs) - n0))
+  } else SKIPPED$msgs <- c(SKIPPED$msgs, .parsed[[key]]$msgs)
+  .parsed[[key]]$res
 }
 
 READERS <- list(photos = read_photos, monkeys = read_monkeys, herps = read_herps, tracks = read_tracks)
@@ -110,6 +115,7 @@ load_db <- function(prev = NULL) {
   files <- find_files(dir)
   ref <- load_ref()
   db <- list(errors = character(), tax = ref$tax, fam = ref$fam, wx = ref$wx)
+  SKIPPED$msgs <- character()
   for (src in names(READERS)) {
     res <- tryCatch({
       if (is.na(files[[src]])) stop(sprintf("no se encontró el archivo / file not found (%s)", FILE_PATTERNS[[src]]), call. = FALSE)
@@ -124,6 +130,7 @@ load_db <- function(prev = NULL) {
   db$balises <- tryCatch(parse_cached(build_balises, files[["balises"]]), error = function(e) {
     db$errors <<- c(db$errors, conditionMessage(e)); prev$balises
   })
+  db$errors <- c(db$errors, SKIPPED$msgs)
   db$synced <- Sys.time()
   db
 }
@@ -167,6 +174,12 @@ add_taxonomy <- function(o, tax, fam = NULL) {
   o
 }
 
+# data.frame() that repeats constants to n rows, including n = 0 (a skipped workbook gives an empty source)
+frame_n <- function(.n, ...) {  # .n, not n: sources have a column called n
+  a <- lapply(list(...), function(v) if (length(v) == 1 && .n != 1) rep(v, .n) else v)
+  as.data.frame(a, stringsAsFactors = FALSE)
+}
+
 # ERA5 sky state from hourly precipitation (mm) and cloud cover (%)
 era5_sky <- function(precip, cloud) ifelse(is.na(cloud), NA, ifelse(precip > 0.2, "Lluvia", ifelse(cloud < 25, "Despejado", ifelse(cloud < 70, "Parcial", "Nublado"))))
 
@@ -179,7 +192,7 @@ build_obs <- function(db, stations) {
   # cameras only log temperature: sky and humidity come from ERA5 reanalysis at the photo's hour
   wx <- db$wx
   wi <- if (!is.null(wx)) match(paste(format(p$date, "%Y-%m-%d"), floor(p$hour)), paste(wx$date, wx$hour)) else rep(NA_integer_, nrow(p))
-  photo <- data.frame(source = "photo", date = p$date, hour = p$hour, class = "Mamífero", family = NA, binomial = p$binomial,
+  photo <- frame_n(nrow(p), source = "photo", date = p$date, hour = p$hour, class = "Mamífero", family = NA, binomial = p$binomial,
                       common_es = p$common_es, trail = NA, station = p$camera, lat = stations$lat[si], lon = stations$lon[si],
                       prec = ifelse(is.na(si), NA, "station"), n = p$n, event = p$event,
                       sky = if (!is.null(wx)) era5_sky(wx$precip[wi], wx$cloud[wi]) else NA,
@@ -188,18 +201,18 @@ build_obs <- function(db, stations) {
   m <- db$monkeys
   pl <- place(m$trail, rep(NA, nrow(m)), b)
   gps <- !is.na(m$lat)
-  monkey <- data.frame(source = "monkey", date = m$date, hour = m$hour, class = "Mamífero", family = NA, binomial = m$binomial,
+  monkey <- frame_n(nrow(m), source = "monkey", date = m$date, hour = m$hour, class = "Mamífero", family = NA, binomial = m$binomial,
                        common_es = m$common_es, trail = m$trail, station = NA, lat = ifelse(gps, m$lat, pl$lat),
                        lon = ifelse(gps, m$lon, pl$lon), prec = ifelse(gps, "gps", pl$prec), n = m$group, event = NA,
                        sky = m$sky, temp = m$temp, hum = m$hum, wx_src = "field")
   h <- db$herps
   pl <- place(h$trail, rep(NA, nrow(h)), b)
-  herp <- data.frame(source = "herp", date = h$date, hour = h$hour, class = h$class, family = h$family, binomial = h$binomial,
+  herp <- frame_n(nrow(h), source = "herp", date = h$date, hour = h$hour, class = h$class, family = h$family, binomial = h$binomial,
                      common_es = NA, trail = h$trail, station = NA, lat = pl$lat, lon = pl$lon, prec = pl$prec, n = 1, event = NA,
                      sky = h$sky, temp = h$temp, hum = h$hum, wx_src = "field")
   t <- db$tracks
   pl <- place(t$trail, t$balise, b)
-  track <- data.frame(source = "track", date = t$date, hour = NA, class = "Mamífero", family = NA, binomial = t$binomial,
+  track <- frame_n(nrow(t), source = "track", date = t$date, hour = NA, class = "Mamífero", family = NA, binomial = t$binomial,
                       common_es = t$common_es, trail = t$trail, station = NA, lat = pl$lat, lon = pl$lon, prec = pl$prec, n = 1, event = NA,
                       sky = NA, temp = NA, hum = NA, wx_src = NA)
   o <- rbind(photo[cols], monkey[cols], herp[cols], track[cols])

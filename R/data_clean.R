@@ -118,7 +118,7 @@ moon_phase <- function(d) {
 pick <- function(d, spec, need, file) {
   keys <- norm_key(names(d))
   cols <- lapply(spec, function(p) { j <- grep(p, keys)[1]; if (is.na(j)) NULL else j })
-  miss <- intersect(need, names(spec)[vapply(cols, is.null, TRUE)])
+  miss <- if (isTRUE(attr(d, "skipped"))) character() else intersect(need, names(spec)[vapply(cols, is.null, TRUE)])
   if (length(miss)) stop(sprintf("%s: columnas faltantes / missing columns: %s", basename(file), paste(miss, collapse = ", ")), call. = FALSE)
   out <- as.data.frame(lapply(cols, function(j) if (is.null(j)) rep(NA_character_, nrow(d)) else as.character(d[[j]])),
                        stringsAsFactors = FALSE)
@@ -126,7 +126,37 @@ pick <- function(d, spec, need, file) {
   out
 }
 
+# Last row a sheet claims to use (<dimension ref="A1:AP1048538">), read from the first bytes of its XML without
+# unpacking the whole file. Formatting applied to entire columns makes Excel store up to ~1M empty rows: the herp
+# workbook was 438 MB of XML for 4 834 data rows and crashed the 1 GB cloud server.
+sheet_extent <- function(path, sheet) {
+  rd <- function(part) { con <- unz(path, part, "rb"); on.exit(close(con)); rawToChar(readBin(con, "raw", 5e6)) }
+  wb <- rd("xl/workbook.xml"); rels <- rd("xl/_rels/workbook.xml.rels")
+  tag <- grep(sprintf('name="%s"', sheet), regmatches(wb, gregexpr("<sheet [^>]*>", wb))[[1]], fixed = TRUE, value = TRUE)[1]
+  rid <- sub('.*r:id="([^"]+)".*', "\\1", tag)
+  rel <- grep(sprintf('Id="%s"', rid), regmatches(rels, gregexpr("<Relationship [^>]*>", rels))[[1]], fixed = TRUE, value = TRUE)[1]
+  target <- sub("^/?(xl/)?", "", sub('.*Target="([^"]+)".*', "\\1", rel))
+  part <- file.path("xl", target)
+  con <- unz(path, part, "rb"); on.exit(close(con))
+  head <- rawToChar(readBin(con, "raw", 4000))
+  z <- utils::unzip(path, list = TRUE)
+  list(rows = as.numeric(sub('.*<dimension ref="[A-Z]+[0-9]+:[A-Z]+([0-9]+)".*', "\\1", head)),
+       mb = z$Length[z$Name == part] / 1e6)  # unpacked XML size: what readxl has to hold in memory
+}
+MAX_SHEET_MB <- 60  # a few thousand real rows is ~5 MB of XML
+SKIPPED <- new.env()  # messages about sheets skipped by read_text(), collected by load_db()
+
 read_text <- function(path, sheet, skip = 0) {
+  ext <- tryCatch(sheet_extent(path, sheet), error = function(e) NULL)
+  if (isTRUE(ext$mb > MAX_SHEET_MB)) {
+    # skip the sheet instead of crashing: the reader returns an empty table and load_db() reports why
+    SKIPPED$msgs <- c(SKIPPED$msgs, sprintf(paste0("%s, hoja/sheet '%s': %.0f MB (formato hasta la fila %s / formatting down to row %s). ",
+                        "Delete the empty rows below the data in Excel (select the first empty row, Ctrl+Shift+Down, ",
+                        "right-click > Delete), save and press refresh."),
+                 basename(path), sheet, ext$mb, format(ext$rows, big.mark = " "), format(ext$rows, big.mark = " ")))
+    d <- data.frame(.row = integer()); attr(d, "skipped") <- TRUE
+    return(d)
+  }
   d <- suppressMessages(readxl::read_excel(path, sheet = sheet, col_types = "text", skip = skip, .name_repair = "unique_quiet"))
   d$.row <- seq_len(nrow(d)) + skip + 1  # Excel row number, for the data-quality page
   d
@@ -139,7 +169,7 @@ find_sheet <- function(path, pattern) {
 }
 
 with_common <- function(x, file, sheet, d) {
-  x$.row <- d$.row; x$.file <- basename(file); x$.sheet <- sheet
+  x$.row <- d$.row; x$.file <- rep(basename(file), nrow(x)); x$.sheet <- rep(sheet, nrow(x))
   x
 }
 
