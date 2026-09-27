@@ -173,7 +173,8 @@ stats_ui <- list(
                 bslib::card_header(htmltools::span(class = "card-title", tt("t_he_wx")), info_icon("tip_he_wx")),
                 bslib::layout_columns(col_widths = c(8, 4),
                                       echarts4r::echarts4rOutput("c_he_wx", height = "360px"),
-                                      shiny::uiOutput("he_wx_strip")))
+                                      shiny::uiOutput("he_wx_strip")),
+                bslib::card_footer(shiny::uiOutput("he_wx_stats")))
   ),
 
   tracks = function() bslib::page_fillable(
@@ -261,6 +262,11 @@ sunburst_tree <- function(f, levels) {
     return(unname(Map(function(nm, v) list(name = nm, value = v), f[[levels]], f$n)))
   lapply(split(f, f[[levels[1]]]), function(d) list(name = d[[levels[1]]][1], children = sunburst_tree(d, levels[-1]))) |> unname()
 }
+# Leaves show nm(name) and keep the original name as `key` (what click handlers send back)
+relabel_leaves <- function(tree, nm) lapply(tree, function(n) {
+  if (is.null(n$children)) { n$key <- n$name; n$name <- nm(n$name) } else n$children <- relabel_leaves(n$children, nm)
+  n
+})
 e_sunburst_tree <- function(tree, radius = c("12%", "95%"), colors = PAL) {
   e <- echarts4r::e_charts()
   e$x$opts$series <- list(list(type = "sunburst", data = tree, radius = radius, sort = "desc",
@@ -307,10 +313,10 @@ clock_chart <- function(h, lang) {
 # length is proportional to the typical value (not squeezed into the band).
 # click_input: Shiny input receiving the clicked group name.
 violin_chart <- function(g, v, lang, icons = NULL, silhouettes = NULL, italic = FALSE, unit = "", colors = PAL, max_pts = 300,
-                         outlier_mult = NULL, sil = "range", click_input = NULL) {
+                         outlier_mult = NULL, sil = "range", click_input = NULL, nm = identity) {
   ok <- !is.na(g) & !is.na(v); g <- as.character(g[ok]); v <- v[ok]
   if (length(v) < 3) return(empty_chart(lang))
-  lv <- names(sort(tapply(v, g, stats::median), decreasing = TRUE)); K <- length(lv)
+  lv <- names(sort(tapply(v, g, stats::median), decreasing = TRUE)); K <- length(lv); lab <- nm(lv)
   if (!is.null(icons)) icons <- unname(icons[lv])
   if (!is.null(silhouettes)) silhouettes <- unname(silhouettes[lv])
   set.seed(1)
@@ -326,7 +332,7 @@ violin_chart <- function(g, v, lang, icons = NULL, silhouettes = NULL, italic = 
     xs <- if (length(x) > max_pts) sample(x, max_pts) else x
     out$pts <- lapply(xs, function(y) list(value = c(k - 1 + stats::runif(1, -0.13, 0.13), y), itemStyle = list(color = colors[(k - 1) %% length(colors) + 1])))
     out$med <- list(value = c(k - 1, stats::median(x)))
-    out$info <- sprintf("<b>%s</b><br>n = %d · %s %s %s<br>%s–%s %s", lv[k], length(x), tr("median", lang), signif(stats::median(x), 3), unit,
+    out$info <- sprintf("<b>%s</b><br>n = %d · %s %s %s<br>%s–%s %s", lab[k], length(x), tr("median", lang), signif(stats::median(x), 3), unit,
                         signif(min(x), 3), signif(max(x), 3), unit)
     out$range <- if (sil == "median") c(k - 1, 0, stats::median(x)) else c(k - 1, min(x), max(x))
     out
@@ -354,11 +360,11 @@ violin_chart <- function(g, v, lang, icons = NULL, silhouettes = NULL, italic = 
   e <- e_raw(list(
     grid = list(left = 48, right = 16, top = 36, bottom = 8, containLabel = TRUE),
     xAxis = list(
-      list(type = "category", data = lv, axisTick = list(show = FALSE), axisLine = list(lineStyle = list(color = COL$line)),
-           axisLabel = if (!is.null(icons)) icon_axis(lv, icons, italic) else
+      list(type = "category", data = lab, axisTick = list(show = FALSE), axisLine = list(lineStyle = list(color = COL$line)),
+           axisLabel = if (!is.null(icons)) icon_axis(lab, icons, italic) else
              list(interval = 0, rotate = 20, fontSize = 10, fontStyle = if (italic) "italic" else "normal")),
       list(type = "value", show = FALSE, min = -0.5, max = K - 0.5)),
-    yAxis = list(type = "value", name = unit, nameTextStyle = list(align = "left"), splitLine = list(lineStyle = list(color = COL$line))),
+    yAxis = list(type = "value", name = unit, nameTextStyle = list(align = "left"), axisLine = list(onZero = FALSE), splitLine = list(lineStyle = list(color = COL$line))),
     series = series))
   if (!is.null(click_input)) e <- on_click(e, sprintf(
     "function(p){ var n = %s; var k = Math.round(p.value && p.value.length ? p.value[0] : -1); if (n[k]) Shiny.setInputValue('%s', n[k], {priority: 'event'}); }",
@@ -373,7 +379,7 @@ on_click <- function(e, handler) { e$x$on <- c(e$x$on, list(list(event = "click"
 # clu_icons: icon per cluster value; clu_prefix: translation prefix of cluster labels; grp_icons: legend icon per group;
 # click_input: Shiny input receiving "clu|<value>" or "grp|<value>".
 pack_chart <- function(f, lang, clu_icons = SUBSTRATE_ICON, clu_prefix = "sub", grp_icons = NULL, italic = FALSE,
-                       click_input = NULL, top_n = 7) {
+                       click_input = NULL, top_n = 7, nm = identity) {
   if (!nrow(f)) return(empty_chart(lang))
   fam_top <- names(utils::head(sort(tapply(f$n, f$grp, sum), decreasing = TRUE), top_n))
   f$fam <- ifelse(f$grp %in% fam_top, f$grp, "~other")
@@ -393,7 +399,7 @@ pack_chart <- function(f, lang, clu_icons = SUBSTRATE_ICON, clu_prefix = "sub", 
   ox <- mean(range(outer$x - R, outer$x + R)); oy <- mean(range(outer$y - R, outer$y + R))
   sc <- 1 / max(diff(range(outer$x - R, outer$x + R)), diff(range(outer$y - R, outer$y + R))) * 2
   fams <- c(fam_top, "~other"); cols <- c(PAL[seq_along(fam_top)], OTHER_COL)
-  famlab <- c(fam_top, tr("other", lang))
+  famlab <- c(nm(fam_top), tr("other", lang))
   clab <- trv(subs, clu_prefix, lang)
   tot <- tapply(f$n, f$substrate, sum)
   items <- list(); info <- character(); pay <- character()
@@ -431,7 +437,7 @@ pack_chart <- function(f, lang, clu_icons = SUBSTRATE_ICON, clu_prefix = "sub", 
 `%|NA|%` <- function(a, b) { a <- unname(a); if (length(a) == 0 || is.na(a[1])) b else a[1] }
 
 # 100 % stacked bars of a category per species; `labels`/`icons` translate and decorate the categories
-stack100 <- function(d, cat, lang, n = 12, prefix = NULL, icons = NULL) {
+stack100 <- function(d, cat, lang, n = 12, prefix = NULL, icons = NULL, nm = identity) {
   d <- d[!is.na(d[[cat]]), ]; if (!nrow(d)) return(empty_chart(lang))
   sp <- top_species(d, n); d <- d[d$binomial %in% sp, ]
   lv <- names(sort(table(d[[cat]]), decreasing = TRUE))
@@ -439,7 +445,7 @@ stack100 <- function(d, cat, lang, n = 12, prefix = NULL, icons = NULL) {
   f <- as.data.frame(prop.table(table(d$binomial, factor(d[[cat]], lv)), 1) * 100)
   names(f) <- c("binomial", "cat", "pct")
   f$cat <- factor(lab[match(f$cat, lv)], lab)  # factor keeps series (and colour) order = category frequency
-  f$binomial <- factor(f$binomial, rev(sp)); f <- f[order(f$cat, f$binomial), ]
+  f$binomial <- factor(nm(as.character(f$binomial)), nm(rev(sp))); f <- f[order(f$cat, f$binomial), ]
   e <- f |> dplyr::group_by(cat) |> echarts4r::e_charts(binomial, reorder = FALSE) |>
     echarts4r::e_bar(pct, stack = "s", barMaxWidth = 16, itemStyle = list(borderColor = COL$surface, borderWidth = 1)) |>
     echarts4r::e_flip_coords() |> e_bigal() |>
@@ -460,11 +466,12 @@ MOON_LIT_COL <- local({ lit <- (1 - cos(2 * pi * (0:7) / 8)) / 2
 HOUR_RAMP <- grDevices::colorRampPalette(c("#2B3A67", "#34477A", "#D9822B", "#E8C547", "#E8C547", "#E8C547", "#D9822B", "#34477A", "#2B3A67"))(24)
 
 # Taxonomic tree (Linnaean hierarchy, not a phylogeny with branch lengths): Class > Order > Family > Genus > Species
-taxo_tree <- function(o, lang) {
+taxo_tree <- function(o, lang, nm = identity) {
   o <- o[!is.na(o$binomial) & !is.na(o$class), ]
   if (!nrow(o)) return(empty_chart(lang))
   o$order[is.na(o$order)] <- "?"; o$family[is.na(o$family)] <- "?"
   f <- count_by(o, class, order, family, genus, binomial)
+  lab <- nm  # `nm` is reused below for node names
   ccol <- c("Mamífero" = PAL[1], "Anfibio" = PAL[3], "Reptil" = PAL[8])
   keys <- c("class", "order", "family", "genus", "binomial")
   node <- function(d, lv, col) unname(lapply(split(d, d[[keys[lv]]]), function(s) {
@@ -473,7 +480,7 @@ taxo_tree <- function(o, lang) {
     if (lv == 5) {
       iu <- if (!is.null(SPECIES_MEDIA$iucn)) SPECIES_MEDIA$iucn[match(nm, SPECIES_MEDIA$binomial)] else NA
       thr <- isTRUE(iu %in% c(IUCN_THREAT, "NT"))
-      return(list(name = nm, value = n, symbolSize = 4 + 1.6 * sqrt(n)^0.8,
+      return(list(name = lab(nm), key = nm, value = n, symbolSize = 4 + 1.6 * sqrt(n)^0.8,
                   itemStyle = list(color = col2, borderColor = if (thr) IUCN_COL[[iu]] else col2, borderWidth = if (thr) 3 else 1),
                   label = list(show = FALSE), emphasis = list(label = list(show = TRUE, fontStyle = "italic", fontSize = 10, color = COL$ink))))
     }
@@ -488,11 +495,11 @@ taxo_tree <- function(o, lang) {
                        initialTreeDepth = -1, expandAndCollapse = TRUE, animationDuration = 400,
                        lineStyle = list(color = "#CFC6AE", width = 1, curveness = 0.4),
                        label = list(fontSize = 9, color = COL$muted), emphasis = list(focus = "ancestor")))))
-  on_click(e, "function(p){ if (p.data && !p.data.children) Shiny.setInputValue('sunburst_click', p.name, {priority: 'event'}); }")
+  on_click(e, "function(p){ if (p.data && !p.data.children) Shiny.setInputValue('sunburst_click', p.data.key || p.name, {priority: 'event'}); }")
 }
 
 # First record of each species through time (all sources), with photo markers for recent & threatened species
-discovery_chart <- function(o, lang) {
+discovery_chart <- function(o, lang, nm = identity) {
   o <- o[!is.na(o$date) & !is.na(o$binomial) & !grepl(" sp\\.$", o$binomial), ]
   if (!nrow(o)) return(empty_chart(lang))
   f <- stats::aggregate(date ~ binomial, o, min); f <- f[order(f$date, f$binomial), ]
@@ -501,7 +508,7 @@ discovery_chart <- function(o, lang) {
   img <- sp_img(f$binomial)
   iu <- SPECIES_MEDIA$iucn[match(f$binomial, SPECIES_MEDIA$binomial)]
   show <- !is.na(img) & (seq_len(nrow(f)) > nrow(f) - 8 | iu %in% IUCN_THREAT)
-  info <- sprintf("<b><i>%s</i></b><br>%s · %s<br>#%d", f$binomial, format(f$date, "%d/%m/%Y"), trv(f$src, "src", lang), f$cum)
+  info <- sprintf("<b><i>%s</i></b><br>%s · %s<br>#%d", nm(f$binomial), format(f$date, "%d/%m/%Y"), trv(f$src, "src", lang), f$cum)
   pts <- lapply(seq_len(nrow(f)), function(i) {
     p <- list(value = list(format(f$date[i]), f$cum[i]))
     if (show[i]) { p$symbol <- paste0("image://", img[i]); p$symbolSize <- 26 } else { p$symbolSize <- 5 }
@@ -560,7 +567,7 @@ trail_sim_chart <- function(o, lang) {
 }
 
 # Elevation profile of a trail from GPS balises, with the most tracked species at each balise as a photo pin
-elev_chart <- function(b, tracks, trail, lang) {
+elev_chart <- function(b, tracks, trail, lang, nm = identity) {
   d <- b[!is.na(b$alt) & b$trail %in% trail & !is.na(b$num), ]; d <- d[order(d$num), ]
   if (nrow(d) < 3) return(empty_chart(lang))
   km <- c(0, cumsum(sqrt((diff(d$lon) * 111320)^2 + (diff(d$lat) * 110570)^2)) / 1000)
@@ -573,7 +580,7 @@ elev_chart <- function(b, tracks, trail, lang) {
     list(value = c(km[i], d$alt[i]), symbol = if (is.na(img)) e_icon(track_icon(names(tb)[1])) else paste0("image://", img),
          symbolSize = 26, symbolOffset = c(0, -22),
          tip = sprintf("<b>%s</b> · %d m<br>%s", d$code[i], d$alt[i],
-                       paste(sprintf("<i>%s</i> %d", names(tb)[1:min(4, length(tb))], as.integer(tb)[1:min(4, length(tb))]), collapse = "<br>")))
+                       paste(sprintf("<i>%s</i> %d", nm(names(tb)[1:min(4, length(tb))]), as.integer(tb)[1:min(4, length(tb))]), collapse = "<br>")))
   })
   pins <- Filter(Negate(is.null), pins)
   tips <- vapply(pins, `[[`, "", "tip"); pins <- lapply(pins, function(p) { p$tip <- NULL; p })
@@ -655,25 +662,47 @@ herp_nights <- function(h) {
   data.frame(n = as.numeric(tapply(key, key, length)), temp = as.numeric(tapply(h$temp, key, mean, na.rm = TRUE)),
              hum = as.numeric(tapply(h$hum, key, mean, na.rm = TRUE)), sky = as.character(tapply(h$sky, key, mode)))
 }
+# Association of each night-weather factor with individuals per night: Spearman ρ for temperature / humidity,
+# Kruskal-Wallis for the sky (categories with >= 5 nights). `best` = most significant factor (lowest p).
+herp_wx_tests <- function(nt) {
+  rho <- function(v) { ok <- is.finite(v)
+    if (sum(ok) < 10 || stats::sd(v[ok]) == 0) return(c(NA, NA))
+    t <- suppressWarnings(stats::cor.test(nt$n[ok], v[ok], method = "spearman", exact = FALSE)); c(unname(t$estimate), t$p.value) }
+  s <- nt[!is.na(nt$sky), ]; s <- s[s$sky %in% names(which(table(s$sky) >= 5)), ]
+  kw <- if (length(unique(s$sky)) >= 2) stats::kruskal.test(s$n, factor(s$sky))$p.value else NA
+  r <- data.frame(var = c("temp", "hum", "sky"), rho = c(rho(nt$temp)[1], rho(nt$hum)[1], NA), p = c(rho(nt$temp)[2], rho(nt$hum)[2], kw))
+  attr(r, "best") <- if (all(is.na(r$p))) NA else r$var[which.min(r$p)]
+  r
+}
+p_label <- function(p) ifelse(is.na(p), "–", ifelse(p < 0.001, "p < 0.001", sprintf("p = %.3f", p)))
+
+# Nights as sky icons: x = mean temperature, y = individuals found, colour = sky, size = humidity
+# (scaled over the observed humidity range, which is narrow; nights without humidity are drawn small and faint)
 herp_wx_chart <- function(nt, lang) {
-  nt <- nt[is.finite(nt$temp) & is.finite(nt$hum), ]; if (!nrow(nt)) return(empty_chart(lang))
-  nt$sky[is.na(nt$sky)] <- "?"
-  lv <- c(SKY_LEVELS, "?")
-  ser <- lapply(lv[lv %in% nt$sky], function(k) {
-    d <- nt[nt$sky == k, ]
-    list(type = "scatter", name = if (k == "?") tr("no_sky", lang) else trv(k, "sky", lang),
-         symbolSize = htmlwidgets::JS("function(v){ return 5 + Math.sqrt(v[2]) * 3.2; }"),
-         itemStyle = list(color = if (k == "?") OTHER_COL else SKY_COL[[k]], opacity = 0.7, borderColor = COL$surface, borderWidth = 1),
-         data = unname(Map(function(a, b, c) c(round(a, 1), round(b, 0), c), d$temp, d$hum, d$n)))
+  d <- nt[is.finite(nt$temp), ]; if (nrow(d) < 3) return(empty_chart(lang))
+  d$sky[is.na(d$sky)] <- "?"
+  lv <- c(SKY_LEVELS, "?"); lv <- lv[lv %in% d$sky]
+  hr <- range(d$hum[is.finite(d$hum)]); if (!all(is.finite(hr))) hr <- c(0, 1)
+  size <- ifelse(is.finite(d$hum), 7 + 17 * (d$hum - hr[1]) / max(1, diff(hr)), 6)
+  name <- function(k) if (k == "?") tr("no_sky", lang) else trv(k, "sky", lang)
+  ser <- lapply(lv, function(k) {
+    i <- which(d$sky == k)
+    list(type = "scatter", name = name(k), symbol = e_icon(if (k == "?") "circle" else SKY_ICON[[k]]),
+         itemStyle = list(color = if (k == "?") OTHER_COL else SKY_COL[[k]], opacity = 0.6),
+         data = lapply(i, function(j) list(value = c(round(d$temp[j], 1), d$n[j]), symbolSize = round(size[j], 1),
+                                           hum = if (is.finite(d$hum[j])) round(d$hum[j]) else "–",
+                                           itemStyle = if (!is.finite(d$hum[j])) list(opacity = 0.35))))
   })
   e_raw(list(
-    grid = list(left = 44, right = 24, top = 36, bottom = 56, containLabel = TRUE),
+    grid = list(left = 44, right = 40, top = 36, bottom = 56, containLabel = TRUE),
     legend = list(bottom = 0, textStyle = list(color = COL$muted), itemWidth = 18, itemHeight = 16, itemStyle = list(opacity = 1),
-                  data = lapply(lv[lv %in% nt$sky], function(k) list(name = if (k == "?") tr("no_sky", lang) else trv(k, "sky", lang),
-                                                                     icon = e_icon(if (k == "?") "circle" else SKY_ICON[[k]])))),
-    tooltip = list(formatter = htmlwidgets::JS(sprintf("function(p){ return p.seriesName + '<br>' + p.value[0] + ' °C · ' + p.value[1] + ' %%<br><b>' + p.value[2] + '</b> %s'; }", tr("per_night", lang)))),
-    xAxis = list(type = "value", name = "°C", min = "dataMin", splitLine = list(lineStyle = list(color = COL$line))),
-    yAxis = list(type = "value", name = tr("humidity", lang), min = "dataMin", max = 100, nameTextStyle = list(align = "left"), splitLine = list(lineStyle = list(color = COL$line))),
+                  data = lapply(lv, function(k) list(name = name(k), icon = e_icon(if (k == "?") "circle" else SKY_ICON[[k]])))),
+    graphic = list(list(type = "text", right = 24, top = 4,
+                        style = list(text = sprintf(tr("size_hum", lang), hr[1], hr[2]), fill = COL$muted, fontSize = 10, fontFamily = "Inter"))),
+    tooltip = list(formatter = htmlwidgets::JS(sprintf("function(p){ return p.seriesName + '<br>' + p.value[0] + ' °C · %s ' + p.data.hum + ' %%<br><b>' + p.value[1] + '</b> %s'; }",
+                                                       tr("humidity_short", lang), tr("per_night", lang)))),
+    xAxis = list(type = "value", name = "°C", min = "dataMin", nameLocation = "end", splitLine = list(lineStyle = list(color = COL$line))),
+    yAxis = list(type = "value", name = tr("per_night", lang), min = 0, nameTextStyle = list(align = "left"), splitLine = list(lineStyle = list(color = COL$line))),
     series = ser))
 }
 
@@ -681,7 +710,7 @@ rt_lang <- function(lang) if (lang == "es") reactable::reactableLang(searchPlace
   pageInfo = "{rowStart}–{rowEnd} de {rows}", pagePrevious = "‹", pageNext = "›", filterPlaceholder = "Filtrar") else
   reactable::reactableLang(searchPlaceholder = "Search", filterPlaceholder = "Filter")
 
-stats_server <- function(input, output, session, obs, src, db, stations, lang) {
+stats_server <- function(input, output, session, obs, src, db, stations, lang, spn) {
   l <- lang
   # ---------------- Overview ----------------
   output$k_records <- shiny::renderText(format(nrow(obs()), big.mark = " "))
@@ -696,7 +725,7 @@ stats_server <- function(input, output, session, obs, src, db, stations, lang) {
                                selected = shiny::isolate(input[[id]]))
   }, ignoreInit = TRUE)
 
-  output$c_discovery <- echarts4r::renderEcharts4r(discovery_chart(obs(), l()))
+  output$c_discovery <- echarts4r::renderEcharts4r(discovery_chart(obs(), l(), spn()))
   output$newcomers <- shiny::renderUI({
     o <- obs(); lang <- l(); o <- o[!is.na(o$date) & !is.na(o$binomial) & !grepl(" sp\\.$", o$binomial), ]
     if (!nrow(o)) return(NULL)
@@ -704,7 +733,7 @@ stats_server <- function(input, output, session, obs, src, db, stations, lang) {
     htmltools::div(class = "newcomers", htmltools::span(class = "nc-title", tr("newcomers", lang)),
       lapply(rev(seq_len(nrow(f))), function(i) htmltools::div(class = "nc",
         sp_avatar(f$binomial[i], o$class[match(f$binomial[i], o$binomial)], 34, family = o$family[match(f$binomial[i], o$binomial)]),
-        htmltools::div(htmltools::tags$i(f$binomial[i]), htmltools::tags$small(format(f$date[i], "%m/%Y"))))))
+        htmltools::div(htmltools::tags$i(spn()(f$binomial[i])), htmltools::tags$small(format(f$date[i], "%m/%Y"))))))
   })
   output$c_trail_sim <- echarts4r::renderEcharts4r(trail_sim_chart(obs(), l()))
   elev_trails <- shiny::reactive({ b <- db()$balises; tb <- table(b$trail[!is.na(b$alt)]); names(tb[tb >= 3]) })
@@ -715,7 +744,7 @@ stats_server <- function(input, output, session, obs, src, db, stations, lang) {
   })
   output$c_elev <- echarts4r::renderEcharts4r({
     shiny::req(input$elev_trail)
-    elev_chart(db()$balises, src()$tracks, input$elev_trail, l())
+    elev_chart(db()$balises, src()$tracks, input$elev_trail, l(), spn())
   })
 
   output$podium <- shiny::renderUI({
@@ -780,11 +809,11 @@ stats_server <- function(input, output, session, obs, src, db, stations, lang) {
     o <- o[!is.na(o$binomial) & !is.na(o$class), ]
     if (!nrow(o)) return(empty_chart(lang))
     o$family[is.na(o$family)] <- "?"
-    if (!identical(input$taxo_mode, "sunburst")) return(taxo_tree(o, lang))
+    if (!identical(input$taxo_mode, "sunburst")) return(taxo_tree(o, lang, spn()))
     o$class <- trv(o$class, "cls", lang)
     f <- count_by(o, class, family, binomial)
-    e_sunburst_tree(sunburst_tree(f, c("class", "family", "binomial"))) |>
-      echarts4r::e_on(list(seriesType = "sunburst"), "function(p){ Shiny.setInputValue('sunburst_click', p.name, {priority:'event'}); }")
+    e_sunburst_tree(relabel_leaves(sunburst_tree(f, c("class", "family", "binomial")), spn())) |>
+      echarts4r::e_on(list(seriesType = "sunburst"), "function(p){ Shiny.setInputValue('sunburst_click', (p.data && p.data.key) || p.name, {priority:'event'}); }")
   })
 
   years_chart <- function(o, lang, years = NULL) {
@@ -805,7 +834,7 @@ stats_server <- function(input, output, session, obs, src, db, stations, lang) {
     sp <- top_species(o, 15)
     f <- count_by(o[o$binomial %in% sp, ], binomial, source)
     f <- tidyr::complete(f, binomial, source, fill = list(n = 0))
-    f$binomial <- factor(f$binomial, levels = rev(sp)); f <- f[order(f$binomial), ]
+    nm <- spn(); f$binomial <- factor(nm(f$binomial), levels = nm(rev(sp))); f <- f[order(f$binomial), ]
     f$src <- src_label(f$source, lang)
     f |> dplyr::group_by(src) |> echarts4r::e_charts(binomial, reorder = FALSE) |>
       echarts4r::e_bar(n, stack = "s", barMaxWidth = 16, itemStyle = list(borderColor = COL$surface, borderWidth = 1)) |>
@@ -816,7 +845,7 @@ stats_server <- function(input, output, session, obs, src, db, stations, lang) {
   # ---------------- Species profile ----------------
   shiny::observe({
     o <- obs(); tb <- sort(table(o$binomial), decreasing = TRUE)
-    ch <- names(tb); names(ch) <- sprintf("%s (%d)", names(tb), as.integer(tb))
+    ch <- names(tb); names(ch) <- sprintf("%s (%d)", spn()(names(tb)), as.integer(tb))
     sel <- shiny::isolate(input$sp); if (is.null(sel) || !sel %in% ch) sel <- if ("Panthera onca" %in% ch) "Panthera onca" else ch[1]
     shiny::updateSelectizeInput(session, "sp", choices = ch, selected = sel, server = TRUE)
   })
@@ -909,7 +938,7 @@ stats_server <- function(input, output, session, obs, src, db, stations, lang) {
     cams <- cams[cams %in% names(which(table(p$camera) >= 5))]
     f <- count_by(p[p$binomial %in% sp & p$camera %in% cams, ], camera, binomial)
     f <- tidyr::complete(f, camera = cams, binomial = rev(sp), fill = list(n = 0))
-    f$camera <- factor(f$camera, cams); f$binomial <- factor(f$binomial, rev(sp)); f <- f[order(f$camera, f$binomial), ]
+    nm <- spn(); f$camera <- factor(f$camera, cams); f$binomial <- factor(nm(f$binomial), nm(rev(sp))); f <- f[order(f$camera, f$binomial), ]
     f |> echarts4r::e_charts(camera, reorder = FALSE) |> echarts4r::e_heatmap(binomial, n, name = tr("events", lang),
                                                                              itemStyle = list(borderColor = COL$surface, borderWidth = 2)) |>
       echarts4r::e_visual_map(n, inRange = list(color = heat_colors), orient = "vertical", right = 0, top = "middle", itemHeight = 110, itemWidth = 10,
@@ -919,10 +948,10 @@ stats_server <- function(input, output, session, obs, src, db, stations, lang) {
   })
 
   shiny::observe({
-    ch <- top_species(ph_events(), 40)
+    ch <- top_species(ph_events(), 40); ch <- stats::setNames(ch, spn()(ch))
     a <- shiny::isolate(input$ov_a); b <- shiny::isolate(input$ov_b)
-    shiny::updateSelectizeInput(session, "ov_a", choices = ch, selected = if (!is.null(a) && a %in% ch) a else intersect(c("Panthera onca", ch[1]), ch)[1])
-    shiny::updateSelectizeInput(session, "ov_b", choices = ch, selected = if (!is.null(b) && b %in% ch) b else intersect(c("Tayassu pecari", ch[2]), ch)[1])
+    shiny::updateSelectizeInput(session, "ov_a", choices = ch, selected = if (!is.null(a) && a %in% ch) a else unname(intersect(c("Panthera onca", ch[1]), ch)[1]))
+    shiny::updateSelectizeInput(session, "ov_b", choices = ch, selected = if (!is.null(b) && b %in% ch) b else unname(intersect(c("Tayassu pecari", ch[2]), ch)[1]))
   })
 
   ov <- shiny::reactive({
@@ -938,8 +967,8 @@ stats_server <- function(input, output, session, obs, src, db, stations, lang) {
     e <- f |> echarts4r::e_charts(hour) |>
       echarts4r::e_area(both, name = tr("overlap", lang), symbol = "none", smooth = TRUE, lineStyle = list(width = 0),
                         areaStyle = list(opacity = 0.35)) |>
-      echarts4r::e_line(a, name = input$ov_a, symbol = "none", smooth = TRUE, lineStyle = list(width = 2.5)) |>
-      echarts4r::e_line(b, name = input$ov_b, symbol = "none", smooth = TRUE, lineStyle = list(width = 2.5)) |>
+      echarts4r::e_line(a, name = spn()(input$ov_a), symbol = "none", smooth = TRUE, lineStyle = list(width = 2.5)) |>
+      echarts4r::e_line(b, name = spn()(input$ov_b), symbol = "none", smooth = TRUE, lineStyle = list(width = 2.5)) |>
       e_bigal() |> echarts4r::e_color(c(COL$sage, PAL[1], PAL[2])) |>
       e_tip(trigger = "axis", valueFormatter = htmlwidgets::JS("v => v.toFixed(3)")) |>
       echarts4r::e_x_axis(type = "value", min = 0, max = 24, interval = 3, name = tr("hour", lang), nameLocation = "end") |>
@@ -966,7 +995,7 @@ stats_server <- function(input, output, session, obs, src, db, stations, lang) {
 
   # All-pairs activity overlap (Δ) of the 10 most photographed species; click a cell to open that pair below
   output$c_ov_matrix <- echarts4r::renderEcharts4r({
-    p <- ph_events(); lang <- l(); p <- p[!is.na(p$hour), ]
+    p <- ph_events(); lang <- l(); nm <- spn(); p <- p[!is.na(p$hour), ]
     n_sp <- table(p$binomial); sp <- names(utils::head(sort(n_sp[n_sp >= 15], decreasing = TRUE), 10))
     if (length(sp) < 3) return(empty_chart(lang))
     rad <- lapply(stats::setNames(sp, sp), function(s) p$hour[p$binomial == s] / 24 * 2 * pi)
@@ -975,7 +1004,7 @@ stats_server <- function(input, output, session, obs, src, db, stations, lang) {
       a <- rad[[sp[i]]]; b <- rad[[sp[j]]]
       d <- unname(overlap::overlapEst(a, b, type = if (min(length(a), length(b)) < 75) "Dhat1" else "Dhat4"))
       cells[[length(cells) + 1]] <- c(j - 1, i - 2, round(d, 2))  # triangle: x = first K-1 species, y = last K-1
-      info <- c(info, sprintf("<i>%s</i> × <i>%s</i><br>Δ = <b>%.2f</b>", sp[i], sp[j], d)); pairs <- c(pairs, paste(sp[i], sp[j], sep = "|"))
+      info <- c(info, sprintf("<i>%s</i> × <i>%s</i><br>Δ = <b>%.2f</b>", nm(sp[i]), nm(sp[j]), d)); pairs <- c(pairs, paste(sp[i], sp[j], sep = "|"))
     }
     img <- sp_img(sp)
     rich <- stats::setNames(lapply(seq_along(sp), function(k) if (is.na(img[k])) list(width = 0) else
@@ -985,9 +1014,9 @@ stats_server <- function(input, output, session, obs, src, db, stations, lang) {
                                                        if (with_name) "'{t|' + v + '} ' + " else "", off))
     e <- e_raw(list(
       grid = list(left = 8, right = 72, top = 16, bottom = 8, containLabel = TRUE),
-      xAxis = list(type = "category", data = sp[-length(sp)], axisTick = list(show = FALSE), splitArea = list(show = FALSE),
+      xAxis = list(type = "category", data = nm(sp[-length(sp)]), axisTick = list(show = FALSE), splitArea = list(show = FALSE),
                    axisLabel = list(interval = 0, rich = rich, formatter = fmt(FALSE))),
-      yAxis = list(type = "category", data = sp[-1], axisTick = list(show = FALSE), axisLabel = list(interval = 0, rich = rich, formatter = fmt(TRUE, 1))),
+      yAxis = list(type = "category", data = nm(sp[-1]), axisTick = list(show = FALSE), axisLabel = list(interval = 0, rich = rich, formatter = fmt(TRUE, 1))),
       visualMap = list(min = 0, max = 1, calculable = TRUE, orient = "vertical", right = 0, top = "middle", itemHeight = 110, itemWidth = 10,
                        precision = 2, inRange = list(color = unname(HEAT_GRADIENT)), textStyle = list(color = COL$muted)),
       tooltip = list(formatter = htmlwidgets::JS(sprintf("function(p){ return %s[p.dataIndex] + '<br><small>%s</small>'; }", js_array(info), tr("click_pair", lang)))),
@@ -1010,17 +1039,17 @@ stats_server <- function(input, output, session, obs, src, db, stations, lang) {
     e_raw(list(
       grid = list(left = 8, right = 72, top = 16, bottom = 8, containLabel = TRUE),
       xAxis = list(type = "category", data = nm, axisTick = list(show = FALSE), axisLabel = moon_axis_label(nm), splitArea = list(show = FALSE)),
-      yAxis = list(type = "category", data = rev(sp), axisLabel = italic_axis, axisTick = list(show = FALSE)),
+      yAxis = list(type = "category", data = spn()(rev(sp)), axisLabel = italic_axis, axisTick = list(show = FALSE)),
       visualMap = list(min = 0, max = max(cells$v, 1), calculable = TRUE, orient = "vertical", right = 0, top = "middle", itemHeight = 110,
                        itemWidth = 10, inRange = list(color = heat_colors), precision = 0, textStyle = list(color = COL$muted)),
       series = list(list(type = "heatmap", name = "%", itemStyle = list(borderColor = COL$surface, borderWidth = 2),
                          data = lapply(seq_len(nrow(cells)), function(k) c(cells$i[k], length(sp) - 1 - cells$j[k], cells$v[k])))),
       tooltip = list(formatter = htmlwidgets::JS(sprintf("function(p){ var s=%s, n=%s; return '<i>'+s[p.value[1]]+'</i><br>'+n[p.value[0]]+': <b>'+p.value[2]+' %%</b>'; }",
-                                                         js_array(rev(sp)), js_array(nm))))))
+                                                         js_array(spn()(rev(sp))), js_array(nm))))))
   })
 
-  output$c_cam_site <- echarts4r::renderEcharts4r(stack100(ph_events(), "site", l(), prefix = "site"))
-  output$c_cam_age <- echarts4r::renderEcharts4r(stack100(ph_events(), "age", l(), 10, prefix = "age"))
+  output$c_cam_site <- echarts4r::renderEcharts4r(stack100(ph_events(), "site", l(), prefix = "site", nm = spn()))
+  output$c_cam_age <- echarts4r::renderEcharts4r(stack100(ph_events(), "age", l(), 10, prefix = "age", nm = spn()))
 
   output$c_cam_temp <- echarts4r::renderEcharts4r({
     p <- ph_events(); lang <- l(); p <- p[!is.na(p$temp_c) & !is.na(p$hour) & p$temp_c > 10 & p$temp_c < 40, ]
@@ -1057,13 +1086,13 @@ stats_server <- function(input, output, session, obs, src, db, stations, lang) {
     sp <- top_species(m, 6)
     f <- count_by(m[m$binomial %in% sp, ], year, binomial)
     f <- tidyr::complete(f, year = as.integer(names(days)), binomial = sp, fill = list(n = 0))
-    f$rate <- f$n / days[as.character(f$year)]; f$year <- as.character(f$year)
-    e <- f |> dplyr::group_by(binomial) |> echarts4r::e_charts(year) |>
+    f$rate <- f$n / days[as.character(f$year)]; f$year <- as.character(f$year); f$lab <- spn()(f$binomial)
+    e <- f |> dplyr::group_by(lab) |> echarts4r::e_charts(year) |>
       echarts4r::e_line(rate, symbol = "circle", symbolSize = 8, lineStyle = list(width = 2)) |> e_bigal() |>
       e_tip(trigger = "axis", valueFormatter = htmlwidgets::JS("v => v.toFixed(2)")) |>
       echarts4r::e_y_axis(nameTextStyle = list(align = "left"), name = tr("per_day", lang))
     # legend: each species' photo as its marker
-    e$x$opts$legend$data <- lapply(sort(unique(f$binomial)), function(b) { img <- sp_img(b)
+    e$x$opts$legend$data <- lapply(sort(unique(f$lab)), function(b) { img <- sp_img(f$binomial[match(b, f$lab)])
       list(name = b, icon = if (is.na(img)) e_icon("monkey") else paste0("image://", img)) })
     e$x$opts$legend$itemWidth <- 18; e$x$opts$legend$itemHeight <- 18
     e$x$opts$legend$textStyle$fontStyle <- "italic"
@@ -1075,11 +1104,12 @@ stats_server <- function(input, output, session, obs, src, db, stations, lang) {
     m <- mk(); lang <- l(); m <- m[!is.na(m$group) & m$group > 0, ]; if (nrow(m) < 3) return(empty_chart(lang))
     sp <- rev(top_species(m, 7))
     st <- t(vapply(sp, function(b) { g <- m$group[m$binomial == b]; c(stats::median(g), min(g), max(g), length(g)) }, numeric(4)))
-    info <- sprintf("<i>%s</i><br>%s: <b>%s</b> · %s %s–%s · n = %d", sp, tr("median", lang), st[, 1], tr("range", lang), st[, 2], st[, 3], st[, 4])
+    o <- order(st[, 1], st[, 3]); sp <- sp[o]; st <- st[o, , drop = FALSE]  # category axis runs bottom-up: largest groups on top
+    info <- sprintf("<i>%s</i><br>%s: <b>%s</b> · %s %s–%s · n = %d", spn()(sp), tr("median", lang), st[, 1], tr("range", lang), st[, 2], st[, 3], st[, 4])
     e_raw(list(
       grid = list(left = 8, right = 24, top = 30, bottom = 8, containLabel = TRUE),
       xAxis = list(type = "value", min = 0, name = tr("individuals", lang), nameLocation = "middle", nameGap = 24, splitLine = list(lineStyle = list(color = COL$line)), minInterval = 1),
-      yAxis = list(type = "category", data = sp, axisLabel = italic_axis, axisTick = list(show = FALSE)),
+      yAxis = list(type = "category", data = spn()(sp), axisLabel = italic_axis, axisTick = list(show = FALSE)),
       series = list(pictogram_series(lapply(seq_along(sp), function(k) c(k - 1, max(1, round(st[k, 1])), 1, st[k, 3])),
                                      "monkey", PAL[2], tr("individuals", lang), horizontal = TRUE, size = 20, info = info))))
   })
@@ -1087,22 +1117,23 @@ stats_server <- function(input, output, session, obs, src, db, stations, lang) {
   output$c_pr_height <- echarts4r::renderEcharts4r({
     m <- mk(); lang <- l(); m <- m[!is.na(m$height) & m$height <= 60, ]
     sp <- top_species(m, 7); m <- m[m$binomial %in% sp, ]
-    violin_chart(m$binomial, m$height, lang, silhouettes = stats::setNames(rep("tree", length(sp)), sp), italic = TRUE, unit = "m")
+    violin_chart(m$binomial, m$height, lang, silhouettes = stats::setNames(rep("tree", length(sp)), sp), italic = TRUE, unit = "m", nm = spn())
   })
-  output$c_pr_activity <- echarts4r::renderEcharts4r(stack100(mk(), "activity", l(), 7, prefix = "act", icons = ACTIVITY_ICON))
+  output$c_pr_activity <- echarts4r::renderEcharts4r(stack100(mk(), "activity", l(), 7, prefix = "act", icons = ACTIVITY_ICON, nm = spn()))
   output$c_pr_dist <- echarts4r::renderEcharts4r({
     m <- mk(); lang <- l(); m <- m[!is.na(m$dist) & m$dist <= 100, ]; d <- m$dist
     if (length(d) < 3) return(empty_chart(lang))
     br <- seq(0, 100, by = 5); bins <- sprintf("%d–%d", br[-length(br)], br[-1])
     if (isTRUE(input$pr_dist_sp)) {  # stacked by species (top 5 + other), legend with species photos
       sp <- top_species(m, 5)
-      m$grp <- factor(ifelse(m$binomial %in% sp, m$binomial, tr("other", lang)), c(sp, tr("other", lang)))
+      keys <- c(sp, tr("other", lang)); labs <- c(spn()(sp), tr("other", lang))
+      m$grp <- factor(labs[match(ifelse(m$binomial %in% sp, m$binomial, tr("other", lang)), keys)], labs)
       m$bin <- factor(bins[as.integer(cut(m$dist, br, include.lowest = TRUE))], bins)
       f <- as.data.frame(table(bin = m$bin, grp = m$grp))
       e <- f |> dplyr::group_by(grp) |> echarts4r::e_charts(bin, reorder = FALSE) |>
         echarts4r::e_bar(Freq, stack = "s", barCategoryGap = "8%", itemStyle = list(borderColor = COL$surface, borderWidth = 0.5)) |>
         e_bigal() |> echarts4r::e_color(c(PAL[seq_along(sp)], OTHER_COL)) |> e_tip(trigger = "axis") |> cat_axis(rotate = 45)
-      e$x$opts$legend$data <- lapply(levels(m$grp), function(b) { img <- sp_img(b)
+      e$x$opts$legend$data <- lapply(seq_along(labs), function(i) { b <- labs[i]; img <- sp_img(keys[i])
         list(name = b, icon = if (is.na(img)) "circle" else paste0("image://", img)) })
       e$x$opts$legend$itemWidth <- 18; e$x$opts$legend$itemHeight <- 18; e$x$opts$legend$textStyle$fontStyle <- "italic"
       return(e)
@@ -1174,7 +1205,7 @@ stats_server <- function(input, output, session, obs, src, db, stations, lang) {
     shiny::observeEvent(input[[paste0("he_iso_", k, "_reset")]], { iso[[k]] <- NULL })
     output[[paste0("he_iso_", k)]] <- shiny::renderUI({
       v <- iso[[k]]; if (is.null(v)) return(NULL)
-      lab <- if (startsWith(v, "clu|")) trv(sub("^clu\\|", "", v), "sub", l()) else sub("^grp\\|", "", v)
+      lab <- if (startsWith(v, "clu|")) trv(sub("^clu\\|", "", v), "sub", l()) else spn()(sub("^grp\\|", "", v))
       htmltools::tags$button(class = "iso-chip", onclick = sprintf("Shiny.setInputValue('he_iso_%s_reset', Date.now())", k),
                              title = tr("show_all", l()), lab, bsicons::bs_icon("x-lg"))
     })
@@ -1195,7 +1226,7 @@ stats_server <- function(input, output, session, obs, src, db, stations, lang) {
     if (!is.null(iso$sub) && startsWith(iso$sub, "clu|")) h <- h[h$substrate == sub("^clu\\|", "", iso$sub), ]
     if (!nrow(h)) return(empty_chart(lang))
     f <- count_by(h, substrate, grp); names(f) <- c("clu", "grp", "n")
-    pack_chart(f, lang, grp_icons = herp_group_icons(h, mod), italic = mod == "binomial", click_input = "he_sub_click")
+    pack_chart(f, lang, grp_icons = herp_group_icons(h, mod), italic = mod == "binomial", click_input = "he_sub_click", nm = spn())
   })
   output$c_he_snakes <- echarts4r::renderEcharts4r({
     h <- hp(); lang <- l()
@@ -1205,7 +1236,7 @@ stats_server <- function(input, output, session, obs, src, db, stations, lang) {
     s$binomial[is.na(s$binomial)] <- "?"
     f <- count_by(s, ven, binomial)
     # colour follows the category: venomous = terracotta with a warning sign, non-venomous = green
-    tree <- sunburst_tree(f, c("ven", "binomial"))
+    tree <- relabel_leaves(sunburst_tree(f, c("ven", "binomial")), spn())
     for (i in seq_along(tree)) {
       ven <- tree[[i]]$name == tr("venomous", lang)
       tree[[i]]$itemStyle <- list(color = if (ven) PAL[8] else PAL[1])
@@ -1218,7 +1249,7 @@ stats_server <- function(input, output, session, obs, src, db, stations, lang) {
   herp_violins <- function(h, v, mod, lang, ...) {
     h <- h[!is.na(h[[v]]) & !(mod == "binomial" & grepl(" sp\\.$", h$grp)), ]
     top <- names(utils::head(sort(table(h$grp), decreasing = TRUE), 8)); h <- h[h$grp %in% top, ]
-    violin_chart(h$grp, h[[v]], lang, italic = mod == "binomial", unit = "cm", ...)
+    violin_chart(h$grp, h[[v]], lang, italic = mod == "binomial", unit = "cm", nm = spn(), ...)
   }
   output$c_he_height <- echarts4r::renderEcharts4r({
     lang <- l(); mod <- input$he_mod_h %||% "family"
@@ -1239,7 +1270,7 @@ stats_server <- function(input, output, session, obs, src, db, stations, lang) {
     if (nrow(h) < 5) return(empty_chart(lang))
     sp <- rev(top_species(h, 8)); h <- h[h$binomial %in% sp, ]
     m <- as.integer(table(factor(h$binomial[h$sex == "Macho"], sp))); f <- as.integer(table(factor(h$binomial[h$sex == "Hembra"], sp)))
-    info <- sprintf("<i>%s</i><br>♂ %d · ♀ %d · %s", sp, m, f, ifelse(f > 0, sprintf("%.1f ♂ : 1 ♀", m / pmax(f, 1)), "—"))
+    info <- sprintf("<i>%s</i><br>♂ %d · ♀ %d · %s", spn()(sp), m, f, ifelse(f > 0, sprintf("%.1f ♂ : 1 ♀", m / pmax(f, 1)), "—"))
     e_raw(list(
       grid = list(left = 8, right = 24, top = 30, bottom = 44, containLabel = TRUE),
       legend = list(bottom = 0, itemWidth = 16, itemHeight = 16, textStyle = list(color = COL$muted),
@@ -1247,7 +1278,7 @@ stats_server <- function(input, output, session, obs, src, db, stations, lang) {
       tooltip = list(formatter = htmlwidgets::JS(sprintf("function(p){ return %s[p.dataIndex]; }", js_array(info)))),
       xAxis = list(type = "value", min = -max(m, f), max = max(m, f), axisLabel = list(formatter = htmlwidgets::JS("function(v){ return Math.abs(v); }")),
                    splitLine = list(lineStyle = list(color = COL$line))),
-      yAxis = list(type = "category", data = sp, axisTick = list(show = FALSE), axisLabel = italic_axis),
+      yAxis = list(type = "category", data = spn()(sp), axisTick = list(show = FALSE), axisLabel = italic_axis),
       series = list(
         list(type = "bar", name = tr("males", lang), stack = "s", data = as.list(-m), barMaxWidth = 18,
              itemStyle = list(color = PAL[3], borderRadius = c(9, 0, 0, 9)),
@@ -1274,7 +1305,7 @@ stats_server <- function(input, output, session, obs, src, db, stations, lang) {
         sz <- if (is.na(pct[i])) 0 else 16 + 32 * rel[i]
         htmltools::div(class = "rc-tile", title = sprintf("%s: %d / %d %s", tr(sprintf("m%02d", i), lang), j[i], n[i], tr("records", lang)),
                        style = sprintf("background:rgba(31,127,168,%.2f)", if (is.na(pct[i])) 0 else 0.05 + 0.3 * rel[i]),
-          htmltools::div(class = "rc-ico", if (sz > 0) html_icon("frog", PAL[3], sprintf("%.0fpx", sz))),
+          htmltools::div(class = "rc-ico", if (sz > 0) html_icon("tadpole", PAL[3], sprintf("%.0fpx", sz))),
           htmltools::div(class = "rc-pct", if (is.na(pct[i])) "–" else sprintf("%.0f%%", 100 * pct[i])),
           htmltools::div(class = "rc-m", tr(sprintf("m%02d", i), lang)))
       })),
@@ -1283,13 +1314,28 @@ stats_server <- function(input, output, session, obs, src, db, stations, lang) {
 
   # Herp nights by weather
   he_nights <- shiny::reactive(herp_nights(hp()))
-  output$c_he_wx <- echarts4r::renderEcharts4r({ nt <- he_nights(); if (is.null(nt)) empty_chart(l()) else herp_wx_chart(nt, l()) })
+  he_wx_tests <- shiny::reactive({ nt <- he_nights(); if (is.null(nt)) NULL else herp_wx_tests(nt) })
+  output$c_he_wx <- echarts4r::renderEcharts4r({
+    nt <- he_nights(); if (is.null(nt)) return(empty_chart(l()))
+    herp_wx_chart(nt, l())
+  })
+  # discreet test line under the chart; the factor shown in the chart is emphasised
+  output$he_wx_stats <- shiny::renderUI({
+    r <- he_wx_tests(); lang <- l(); if (is.null(r)) return(NULL)
+    best <- attr(r, "best")
+    lab <- c(temp = tr("temperature", lang), hum = tr("humidity_short", lang), sky = tr("sky", lang))
+    txt <- ifelse(r$var == "sky", sprintf("%s · Kruskal-Wallis %s", lab[r$var], p_label(r$p)),
+                  sprintf("%s · Spearman r = %s, %s", lab[r$var], ifelse(is.na(r$rho), "–", sprintf("%+.2f", r$rho)), p_label(r$p)))
+    htmltools::div(class = "wx-tests", htmltools::span(tr("wx_tests", lang)),
+      lapply(seq_len(nrow(r)), function(i) htmltools::span(class = paste("wx-test", if (identical(r$var[i], best)) "best",
+                                                                         if (isTRUE(r$p[i] < 0.05)) "sig"), txt[i])))
+  })
   output$he_wx_strip <- shiny::renderUI({
     nt <- he_nights(); lang <- l(); if (is.null(nt)) return(NULL)
     nt <- nt[!is.na(nt$sky), ]; if (!nrow(nt)) return(NULL)
     avg <- tapply(nt$n, factor(nt$sky, SKY_LEVELS), mean); cnt <- table(factor(nt$sky, SKY_LEVELS)); mx <- max(avg, na.rm = TRUE)
     htmltools::div(class = "wx-strip", htmltools::div(class = "wxs-title", tr("per_night_by_sky", lang)),
-      lapply(SKY_LEVELS[cnt > 0], function(k) htmltools::div(class = "wxs-row",
+      lapply(names(sort(avg[cnt > 0], decreasing = TRUE)), function(k) htmltools::div(class = "wxs-row",
         html_icon(SKY_ICON[[k]], SKY_COL[[k]], "1.6em"),
         htmltools::div(class = "wxs-body", htmltools::div(class = "wxs-lab", trv(k, "sky", lang), htmltools::tags$small(sprintf(" · %d %s", cnt[[k]], tr("nights", lang)))),
           htmltools::div(class = "wxs-bar", htmltools::span(style = sprintf("width:%.0f%%;background:%s", 100 * avg[[k]] / mx, SKY_COL[[k]])))),
@@ -1298,22 +1344,22 @@ stats_server <- function(input, output, session, obs, src, db, stations, lang) {
 
   # ---------------- Tracks ----------------
   tk <- shiny::reactive({ t <- src()$tracks; t[!is.na(t$binomial), ] })
-  glyph_axis <- function(sp) {  # species axis labels prefixed with their track glyph
+  glyph_axis <- function(sp, nm) {  # species axis labels (display names) followed by their track glyph
     g <- track_icon(sp); u <- unique(g)
     rich <- stats::setNames(lapply(u, function(i) list(width = 14, height = 14, backgroundColor = list(image = icon_uri(i, COL$muted)))), u)
     rich$t <- list(fontStyle = "italic", fontSize = 11, color = COL$muted, padding = c(0, 0, 0, 4))
     list(interval = 0, rich = rich, formatter = htmlwidgets::JS(sprintf("function(v){ var g=%s; return '{t|'+v+'} {'+(g[v]||'paw')+'|}'; }",
-                                                                        jsonlite::toJSON(as.list(stats::setNames(g, sp)), auto_unbox = TRUE))))
+                                                                        jsonlite::toJSON(as.list(stats::setNames(g, nm(sp))), auto_unbox = TRUE))))
   }
   track_heat <- function(f, xcol, xlev, sp, lang) {
     f <- tidyr::complete(f, !!rlang::sym(xcol) := xlev, binomial = rev(sp), fill = list(n = 0))
-    f[[xcol]] <- factor(f[[xcol]], xlev); f$binomial <- factor(f$binomial, rev(sp)); f <- f[order(f[[xcol]], f$binomial), ]
+    nm <- spn(); f[[xcol]] <- factor(f[[xcol]], xlev); f$binomial <- factor(nm(f$binomial), nm(rev(sp))); f <- f[order(f[[xcol]], f$binomial), ]
     f |> echarts4r::e_charts_(xcol, reorder = FALSE) |> echarts4r::e_heatmap(binomial, n, name = tr("records", lang),
                                                                             itemStyle = list(borderColor = COL$surface, borderWidth = 2)) |>
       echarts4r::e_visual_map(n, inRange = list(color = heat_colors), orient = "vertical", right = 0, top = "middle", itemHeight = 110, itemWidth = 10,
                               textStyle = list(color = COL$muted)) |>
       e_bigal(legend = FALSE) |> grid_set(right = 72, bottom = 16) |> cat_axis(rotate = 35) |>
-      echarts4r::e_y_axis(axisLabel = glyph_axis(sp))
+      echarts4r::e_y_axis(axisLabel = glyph_axis(sp, nm))
   }
   output$c_tr_trail <- echarts4r::renderEcharts4r({
     t <- tk(); lang <- l(); t <- t[!is.na(t$trail), ]; if (!nrow(t)) return(empty_chart(lang))
@@ -1332,16 +1378,22 @@ stats_server <- function(input, output, session, obs, src, db, stations, lang) {
     if (!nrow(t)) return(empty_chart(lang))
     sp <- top_species(t[!t$verify, ], 7)
     pts <- function(d) lapply(seq_len(nrow(d)), function(i) c(d$len[i], d$wid[i]))
-    ser <- lapply(seq_along(sp), function(k) list(type = "scatter", name = sp[k], symbol = e_icon(track_icon(sp[k])), symbolSize = 12,
-                                                   itemStyle = list(color = PAL[k], opacity = 0.75), data = pts(t[!t$verify & t$binomial == sp[k], ])))
+    # faint prints + one large, outlined print at each species' centroid (mean length × width)
+    ser <- lapply(seq_along(sp), function(k) { d <- t[!t$verify & t$binomial == sp[k], ]
+      list(type = "scatter", name = spn()(sp[k]), symbol = e_icon(track_icon(sp[k])), symbolSize = 11,
+           itemStyle = list(color = PAL[k], opacity = 0.25), data = pts(d),
+           markPoint = list(symbol = e_icon(track_icon(sp[k])), symbolSize = 30,
+                            itemStyle = list(color = PAL[k], opacity = 1, borderColor = COL$ink, borderWidth = 1.5),
+                            label = list(show = FALSE),
+                            data = list(list(name = tr("centroid", lang), coord = round(c(mean(d$len), mean(d$wid)), 1))))) })
     oth <- t[!t$verify & !t$binomial %in% sp, ]; ver <- t[t$verify, ]
-    if (nrow(oth)) ser <- c(ser, list(list(type = "scatter", name = tr("other", lang), symbolSize = 7, itemStyle = list(color = OTHER_COL), data = pts(oth))))
+    if (nrow(oth)) ser <- c(ser, list(list(type = "scatter", name = tr("other", lang), symbolSize = 7, itemStyle = list(color = OTHER_COL, opacity = 0.35), data = pts(oth))))
     if (nrow(ver)) ser <- c(ser, list(list(type = "scatter", name = tr("to_verify", lang), symbol = "emptyCircle", symbolSize = 12,
                                            itemStyle = list(color = "#C4502F", borderWidth = 2), data = pts(ver))))
     e_raw(list(
       grid = list(left = 40, right = 56, top = 36, bottom = 56, containLabel = TRUE),
       legend = list(bottom = 0, textStyle = list(color = COL$muted, fontSize = 10, fontStyle = "italic"), itemWidth = 14, itemHeight = 14),
-      tooltip = list(formatter = htmlwidgets::JS("function(p){ return '<i>'+p.seriesName+'</i><br>'+p.value[0]+' × '+p.value[1]+' cm'; }")),
+      tooltip = list(formatter = htmlwidgets::JS("function(p){ var v = p.componentType === 'markPoint' ? p.data.coord : p.value; return '<i>'+p.seriesName+'</i>'+(p.componentType === 'markPoint' ? ' · <b>'+p.name+'</b>' : '')+'<br>'+v[0]+' × '+v[1]+' cm'; }")),
       xAxis = list(type = "value", name = tr("length_cm", lang), nameLocation = "end", splitLine = list(lineStyle = list(color = COL$line))),
       yAxis = list(type = "value", name = tr("width_cm", lang), nameTextStyle = list(align = "left"), splitLine = list(lineStyle = list(color = COL$line))),
       series = ser))

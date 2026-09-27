@@ -36,7 +36,8 @@ ui <- page_navbar(
     tip(sliderInput("f_years", tt("years"), min = 2007, max = 2025, value = c(2007, 2025), sep = "", ticks = FALSE), "tip_f_years"),
     tip(selectizeInput("f_class", tt("class"), choices = NULL, multiple = TRUE, options = list(placeholder = "—")), "tip_f_class"),
     tip(selectizeInput("f_family", tt("family"), choices = NULL, multiple = TRUE, options = list(placeholder = "—")), "tip_f_family"),
-    tip(selectizeInput("f_species", tt("species"), choices = NULL, multiple = TRUE, options = list(placeholder = "—")), "tip_f_species"),
+    tip(selectizeInput("f_species", tt("species"), choices = NULL, multiple = TRUE,
+                       options = list(placeholder = tr("search_species"), openOnFocus = FALSE, maxOptions = 30)), "tip_f_species"),
     tip(selectizeInput("f_months", tt("months"), choices = month_choices("es"), multiple = TRUE, options = list(placeholder = "—")), "tip_f_months"),
     tip(input_switch("f_threat", tagList(tags$span(class = "iucn-dot"), tt("threatened_only")), FALSE), "tip_f_threat"),
     tip(actionButton("f_reset", tagList(bsicons::bs_icon("arrow-counterclockwise"), tt("reset_filters")), class = "btn-reset w-100"), "tip_f_reset"),
@@ -52,6 +53,8 @@ ui <- page_navbar(
   nav_panel(tt("nav_tracks"), value = "tracks", icon = bsicons::bs_icon("signpost-split"), stats_ui$tracks()),
   nav_panel(tt("nav_quality"), value = "quality", icon = bsicons::bs_icon("clipboard-check"), stats_ui$quality()),
   nav_spacer(),
+  nav_item(tip(radioButtons("names", NULL, inline = TRUE, choiceNames = list(tt("names_latin"), tt("names_common")),
+                            choiceValues = c("latin", "common")), "tip_names", "bottom")),
   nav_item(tip(radioButtons("lang", NULL, c(ES = "es", EN = "en"), inline = TRUE), "tip_lang", "bottom")),
   nav_item(tip(actionButton("refresh", NULL, icon = bsicons::bs_icon("arrow-repeat"), class = "btn-nav"), "tip_refresh", "bottom")),
   nav_item(uiOutput("synced", inline = TRUE))
@@ -101,6 +104,18 @@ server <- function(input, output, session) {
          herps = prep_src(d$herps, tax, class = NULL, fam = d$fam), tracks = prep_src(d$tracks, tax))
   }) |> bindCache(db()$synced)
 
+  # Species display names: Latin (identity) or common name in the current language. binomial stays the key everywhere.
+  spn <- reactive({
+    if (!identical(input$names, "common")) return(identity)
+    o <- obs_all(); b <- sort(unique(stats::na.omit(o$binomial)))
+    k <- !is.na(o$common_es)
+    lab <- sp_common(b, o$common_es[k][match(b, o$binomial[k])], lang())
+    lab[!nzchar(lab)] <- b[!nzchar(lab)]  # no common name: keep the Latin one
+    d <- lab %in% lab[duplicated(lab)]; lab[d] <- sprintf("%s (%s)", lab[d], b[d])  # labels must stay unique (axes, factor levels)
+    tab <- stats::setNames(lab, b)
+    function(x) { v <- unname(tab[as.character(x)]); ifelse(is.na(v), as.character(x), v) }
+  })
+
   # ---- global filters ----
   observe({
     o <- obs_all(); y <- range(o$year, na.rm = TRUE)
@@ -116,7 +131,13 @@ server <- function(input, output, session) {
     o <- obs_all()
     if (length(input$f_class)) o <- o[o$class %in% input$f_class, ]
     if (length(input$f_family)) o <- o[o$family %in% input$f_family, ]
-    updateSelectizeInput(session, "f_species", choices = setdiff(sort(unique(stats::na.omit(o$binomial))), "Homo sapiens"), selected = isolate(input$f_species), server = TRUE)
+    b <- setdiff(sort(unique(stats::na.omit(o$binomial))), "Homo sapiens"); nm <- spn()
+    # the label carries both names so typing either one finds the species
+    k <- !is.na(o$common_es)
+    other <- if (identical(input$names, "common")) b else sp_common(b, o$common_es[k][match(b, o$binomial[k])], lang())
+    lab <- ifelse(nzchar(other) & other != nm(b), paste(nm(b), other, sep = " · "), nm(b))
+    updateSelectizeInput(session, "f_species", choices = stats::setNames(b, lab), selected = isolate(input$f_species), server = TRUE,
+                         options = list(placeholder = tr("search_species", lang()), openOnFocus = FALSE, maxOptions = 30))
   })
   observeEvent(input$f_reset, {
     y <- range(obs_all()$year, na.rm = TRUE)
@@ -156,8 +177,8 @@ server <- function(input, output, session) {
       tags$div(class = "sum-row total", tags$span(tr("species_n", l)), tags$b(length(unique(stats::na.omit(o$binomial))))))
   })
 
-  map_server(input, output, session, obs, db, stations, lang)
-  stats_server(input, output, session, obs, src, db, stations, lang)
+  map_server(input, output, session, obs, db, stations, lang, spn)
+  stats_server(input, output, session, obs, src, db, stations, lang, spn)
 }
 
 shinyApp(ui, server)

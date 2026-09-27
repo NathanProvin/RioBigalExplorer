@@ -17,7 +17,7 @@ map_ui <- function() {
     htmltools::div(
       class = "glass toolbox",
       bslib::accordion(
-        id = "toolbox", open = c("layers", "time"), multiple = TRUE,
+        id = "toolbox", open = FALSE, multiple = TRUE,
         bslib::accordion_panel(
           tt("layers"), value = "layers", icon = bsicons::bs_icon("layers"),
           tip(shiny::radioButtons("basemap", NULL, inline = TRUE, choiceNames = list(tt("base_sat"), tt("base_topo")),
@@ -27,7 +27,7 @@ map_ui <- function() {
           sw("lyr_trails", "trails", "tip_lyr_trails"),
           sw("lyr_bal_names", "balise_names", "tip_lyr_bal_names", value = FALSE),
           sw("lyr_balises", "balises", "tip_lyr_balises", value = FALSE),
-          sw("lyr_heat", "heatmap", "tip_lyr_heat", value = FALSE),
+          sw("lyr_heat", "heatmap", "tip_lyr_heat", value = TRUE),
           htmltools::hr(),
           tip(shiny::selectInput("color_by", tt("color_by"), choices = stats::setNames(COLOR_BY, vapply(paste0("cb_", COLOR_BY), tr, "")),
                                  selectize = FALSE), "tip_color_by", "right")
@@ -84,7 +84,7 @@ popup_html <- function(o, lang) {
 hour_period <- function(h) ifelse(is.na(h), NA, ifelse(h < 5 | h >= 19, "night", ifelse(h < 6 | h >= 18, "twilight", "day")))
 
 # Colour for each record + legend description, for the "colour by" choice
-color_scheme <- function(o, by, lang) {
+color_scheme <- function(o, by, lang, nm = identity) {
   cat_top <- function(v, labels = v, n = 7, pal = PAL) {
     top <- names(utils::head(sort(table(v), decreasing = TRUE), n))
     col <- ifelse(v %in% top, pal[match(v, top)], OTHER_COL)
@@ -96,7 +96,7 @@ color_scheme <- function(o, by, lang) {
     source = list(col = unname(SOURCE_COL[o$source]),
                   legend = data.frame(label = trv(names(SOURCE_COL), "src", lang), col = unname(SOURCE_COL), italic = FALSE,
                                       icon = unname(SOURCE_ICON))),
-    species = { r <- cat_top(o$binomial); r$legend$italic <- TRUE; r },
+    species = { r <- cat_top(o$binomial, nm(o$binomial)); r$legend$italic <- identical(nm, identity); r },
     class = cat_top(o$class, trv(o$class, "cls", lang), 3),
     family = cat_top(o$family),
     trail = list(col = ifelse(is.na(TRAIL_COL[o$trail]), OTHER_COL, unname(TRAIL_COL[o$trail])),
@@ -120,7 +120,7 @@ color_scheme <- function(o, by, lang) {
   )
 }
 
-map_server <- function(input, output, session, obs, db, stations, lang) {
+map_server <- function(input, output, session, obs, db, stations, lang, spn) {
   output$map <- leaflet::renderLeaflet({
     b <- db()$balises
     leaflet::leaflet(options = leaflet::leafletOptions(preferCanvas = TRUE, zoomControl = FALSE)) |>
@@ -178,16 +178,16 @@ map_server <- function(input, output, session, obs, db, stations, lang) {
   # Colours are computed on the unanimated selection so they stay fixed while the timeline plays
   scheme <- shiny::reactive({
     o <- obs(); o <- o[!is.na(o$lat), ]
-    list(o = o, s = color_scheme(o, input$color_by %||% "source", lang()))
+    list(o = o, s = color_scheme(o, input$color_by %||% "source", lang(), spn()))
   })
   rec_col <- function(o) { sc <- scheme(); sc$s$col[match(o$rid, sc$o$rid)] }
 
   shiny::observe({
-    o <- map_obs(); l <- lang(); by <- input$color_by %||% "source"
+    o <- map_obs(); l <- lang(); by <- input$color_by %||% "source"; nm <- spn()
     p <- leaflet::leafletProxy("map") |> leaflet::clearGroup("obs") |> leaflet::clearGroup("heat")
     if (!nrow(o)) return()
     if (isTRUE(input$lyr_heat)) {
-      leaflet.extras::addHeatmap(p, o$lon, o$lat, intensity = 1, radius = 15, blur = 18, max = 0.6, minOpacity = 0.25, group = "heat",
+      leaflet.extras::addHeatmap(p, o$lon, o$lat, intensity = 1, radius = 15, blur = 18, max = 1, minOpacity = 0.15, group = "heat",
                                  gradient = HEAT_GRADIENT)
       return()
     }
@@ -200,7 +200,7 @@ map_server <- function(input, output, session, obs, db, stations, lang) {
         top <- utils::head(sort(table(d$binomial), decreasing = TRUE), 5)
         data.frame(station = d$station[1], lat = d$lat[1], lon = d$lon[1], col = d$col[1], n = nrow(d),
                    sp = length(unique(stats::na.omit(d$binomial))),
-                   top = paste(sprintf("<li><i>%s</i> <span>%d</span></li>", names(top), as.integer(top)), collapse = ""))
+                   top = paste(sprintf("<li><i>%s</i> <span>%d</span></li>", nm(names(top)), as.integer(top)), collapse = ""))
       }))
       # fan out same-station bubbles so each category stays visible
       k <- stats::ave(seq_len(nrow(s)), s$station, FUN = seq_along) - 1
@@ -219,7 +219,7 @@ map_server <- function(input, output, session, obs, db, stations, lang) {
       # popups are built on click (map_marker_click): sending 13k popup HTML strings made the first load ~10 s slower
       p <- leaflet::addCircleMarkers(p, d$lon, d$lat, radius = ifelse(tr_, 4.5, 4), stroke = TRUE, weight = ifelse(tr_, 1.8, 0.8),
                                      color = ifelse(tr_, d$col, "#FFFFFF"), fillColor = d$col, fillOpacity = ifelse(tr_, 0.15, 0.9),
-                                     group = "obs", layerId = paste0("r", d$rid), label = ifelse(is.na(d$binomial), "?", d$binomial))
+                                     group = "obs", layerId = paste0("r", d$rid), label = ifelse(is.na(d$binomial), "?", nm(d$binomial)))
     }
   })
 

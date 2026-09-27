@@ -3368,16 +3368,16 @@
   },
   "files": {
     "app.R": {
-      "checksum": "03cd27a8c912a44c35eadb3885e1765a"
+      "checksum": "602cee4001595dc05eccf38e105e0dfe"
     },
     "i18n/translation.csv": {
-      "checksum": "544d8b195a9179e4c9663eb1fefa3776"
+      "checksum": "fa7f7ba1d03e6bf77e2208376c4fbcec"
     },
     "R/data_clean.R": {
-      "checksum": "c5278d1513348e2c8f7deb1a33246173"
+      "checksum": "ed16311401297106e33e0436d82ce42b"
     },
     "R/data_sync.R": {
-      "checksum": "55bb4870aac87b1f060fb78c26f7894e"
+      "checksum": "4651e6f3873e35b1b0a6d838ee659149"
     },
     "R/geo.R": {
       "checksum": "5d24c674cb94e33187cc846fda7b1e9e"
@@ -3386,19 +3386,19 @@
       "checksum": "a23de58c402f66ce188eae3e1b491266"
     },
     "R/icons.R": {
-      "checksum": "82e7fb8dfbcdccf8d9a1d8a5142e77db"
+      "checksum": "694f9eac449b68432ad6c898a2a2ad0f"
     },
     "R/media.R": {
       "checksum": "ff275bca97dcb209570c5cf336016da3"
     },
     "R/mod_map.R": {
-      "checksum": "05aff7f308577220d14fc829a6ac7c01"
+      "checksum": "3253f6811823711c0afd0c7015bb72fb"
     },
     "R/mod_stats.R": {
-      "checksum": "f3eb0e197f3a4dbd936ced7c055600ec"
+      "checksum": "239d9dbf5cbdc4a011d5811f205ade62"
     },
     "R/theme.R": {
-      "checksum": "6b1d03915119da0feca41a34f3e10d37"
+      "checksum": "44eba44862ede132af7d685f85261ba5"
     },
     "ref/balises_extra.csv": {
       "checksum": "e693d7841af1adc6965464700f903a5c"
@@ -3830,7 +3830,7 @@
       "checksum": "93473fc6dabddb5e3de0ed006ae57a2c"
     },
     "www/styles.css": {
-      "checksum": "dddd6c58ce45bc80f23cd8e9208318ee"
+      "checksum": "a54314feb1755faed461aa9b18f06ae0"
     }
   },
   "users": null

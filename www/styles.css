@@ -326,3 +326,22 @@ body.drawer-open .drawer { transform: none; }
 .wxs-bar { height: 8px; background: #EFE9DA; border-radius: 99px; overflow: hidden; margin-top: .2rem; }
 .wxs-bar span { display: block; height: 100%; border-radius: 99px; }
 .wxs-row b { font-family: Fraunces, serif; font-size: 1.1rem; color: var(--green-dk); min-width: 2.2rem; text-align: right; }
+
+/* Latin / common names toggle (same pill look as the language control) */
+#names { margin: 0 .5rem 0 0; }
+#names .shiny-options-group { display: inline-flex; background: rgba(255,255,255,.08); border-radius: 999px; padding: 2px; }
+#names .radio-inline { margin: 0; padding: 0; }
+#names input { display: none; }
+#names .radio-inline span { display: block; padding: .15rem .6rem; border-radius: 999px; font-size: .75rem; font-weight: 600;
+  color: rgba(246,241,228,.7); cursor: pointer; }
+#names input:checked + span { background: var(--ochre); color: var(--green-dk); }
+#names input[value="latin"] + span { font-style: italic; }
+
+/* sidebar species filter reads as a search box */
+#f_species + .selectize-control .selectize-input { padding-left: 30px !important;
+  background: #fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 16 16' fill='%236B7A6E'%3E%3Cpath d='M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398l3.85 3.85a1 1 0 0 0 1.415-1.414zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0'/%3E%3C/svg%3E") no-repeat 10px center !important; }
+
+/* herp weather tests: one quiet line, the factor drawn in the chart emphasised */
+.wx-tests { display: flex; flex-wrap: wrap; gap: .3rem .9rem; font-size: .72rem; color: var(--muted); }
+.wx-test.sig::after { content: " *"; }
+.wx-test.best { color: var(--green-dk); font-weight: 600; border-bottom: 2px solid var(--ochre); }

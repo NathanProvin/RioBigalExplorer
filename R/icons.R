@@ -44,6 +44,7 @@ SHAPES <- list(
                  ellipse_p(58, 86, 8, 13, -20), ellipse_p(90, 15, 8, 13, 40), ellipse_p(72, 26, 7, 12, -50)),
   roots = paste(thick_curve(c(50, 50, 50), c(2, 22, 42), c(18, 15)), thick_curve(c(50, 32, 14), c(40, 62, 92), c(10, 4)),
                 thick_curve(c(50, 53, 48), c(40, 70, 98), c(10, 4)), thick_curve(c(50, 68, 86), c(40, 60, 88), c(10, 4))),
+  tadpole = paste(ellipse_p(32, 50, 20, 16), thick_curve(c(48, 62, 76, 90, 98), c(50, 44, 54, 46, 52), c(16, 9, 4, 1))),
   vine = paste(thick_curve(c(50, 30, 68, 32, 58), c(2, 25, 50, 75, 98), c(8, 7, 6)),
                ellipse_p(22, 32, 9, 14, 40), ellipse_p(78, 55, 9, 14, -40), ellipse_p(22, 82, 9, 14, 40))
 )
@@ -54,7 +55,7 @@ FA_ICONS <- c("camera", "binoculars", "frog", "paw", "leaf", "tree", "mound", "w
               "route", "gem", "droplet", "shoe-prints", "mars", "venus", "egg", "temperature-half", "mountain-sun", "xmark", "sitemap")
 ICON_PATH <- c(stats::setNames(vapply(FA_ICONS, fa_path, ""), FA_ICONS), unlist(SHAPES))
 ICON_BOX <- c(stats::setNames(lapply(FA_ICONS, fa_box), FA_ICONS), lapply(SHAPES, function(s) c(0, 0, 100, 100)))
-ICON_BOX[c("monkey", "hoof", "tapir")] <- list(c(18, 8, 80, 84), c(20, 16, 60, 76), c(12, 10, 76, 76))  # tight crops
+ICON_BOX[c("monkey", "hoof", "tapir", "tadpole")] <- list(c(18, 8, 80, 84), c(20, 16, 60, 76), c(12, 10, 76, 76), c(10, 12, 90, 76))  # tight crops
 
 e_icon <- function(name) paste0("path://", ICON_PATH[[name]])
 html_icon <- function(name, col = "currentColor", size = "1em", class = "ico") {

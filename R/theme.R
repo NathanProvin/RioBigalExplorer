@@ -45,5 +45,5 @@ e_bigal <- function(e, legend = TRUE) {
     echarts4r::e_text_style(fontFamily = "Inter", color = COL$muted)
 }
 
-# Density heatmaps (map + species "Where"): deep blue -> sand -> brick red
-HEAT_GRADIENT <- c("0.15" = "#1F3B73", "0.35" = "#5B8DB8", "0.55" = "#E8D8B0", "0.8" = "#C4502F", "1" = "#8E2A1B")
+# Density heatmaps (map + species "Where" + overlap matrix): blue -> yellow -> orange -> red, stops spread over the whole range
+HEAT_GRADIENT <- c("0" = "#1F4FB0", "0.3" = "#3F8FE0", "0.5" = "#F7E24B", "0.68" = "#F5A020", "0.85" = "#E8541E", "1" = "#B3120F")
