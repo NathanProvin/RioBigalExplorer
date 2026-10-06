@@ -345,3 +345,4 @@
 "centroid","centroide","centroid"
 "wx_tests","Individuos por noche ~","Individuals per night ~"
 "size_hum","Tamaño = humedad (%.0f–%.0f %%)","Size = humidity (%.0f–%.0f %%)"
+"tip_pdf","Descargar esta página en PDF (gráficos o mapa con la configuración actual).","Download this page as PDF (charts or map with the current settings)."

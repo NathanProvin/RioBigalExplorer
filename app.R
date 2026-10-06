@@ -28,6 +28,9 @@ ui <- page_navbar(
   title = tags$span(class = "brand", bsicons::bs_icon("feather"), tags$span(HTML("<span class='brand-rio'>Rio</span>Bigal"), tags$b("Explorer"))),
   header = tags$head(
     tags$link(rel = "stylesheet", href = "styles.css"), tags$script(src = "app.js"), tags$script(src = "charts.js"),
+    # PDF export (client side snapshot of the current page)
+    tags$script(src = "https://cdn.jsdelivr.net/npm/html-to-image@1.11.11/dist/html-to-image.js", defer = NA),
+    tags$script(src = "https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js", defer = NA),
     tags$link(rel = "icon", href = "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><circle cx='8' cy='8' r='7' fill='%231E4D2B'/></svg>")
   ),
   sidebar = sidebar(
@@ -55,6 +58,8 @@ ui <- page_navbar(
   nav_spacer(),
   nav_item(tip(radioButtons("names", NULL, inline = TRUE, choiceNames = list(tt("names_latin"), tt("names_common")),
                             choiceValues = c("latin", "common")), "tip_names", "bottom")),
+  nav_item(tip(tags$button(id = "pdf_export", type = "button", class = "btn-pdf", bsicons::bs_icon("arrow-down"), tags$span("PDF")),
+               "tip_pdf", "bottom")),
   nav_item(tip(radioButtons("lang", NULL, c(ES = "es", EN = "en"), inline = TRUE), "tip_lang", "bottom")),
   nav_item(tip(actionButton("refresh", NULL, icon = bsicons::bs_icon("arrow-repeat"), class = "btn-nav"), "tip_refresh", "bottom")),
   nav_item(uiOutput("synced", inline = TRUE))
