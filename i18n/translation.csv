@@ -346,3 +346,6 @@
 "wx_tests","Individuos por noche ~","Individuals per night ~"
 "size_hum","Tamaño = humedad (%.0f–%.0f %%)","Size = humidity (%.0f–%.0f %%)"
 "tip_pdf","Descargar esta página en PDF (gráficos o mapa con la configuración actual).","Download this page as PDF (charts or map with the current settings)."
+"made_by","Hecho por","Made by"
+"view_3d","Vista 3D","3D view"
+"tip_lyr_3d","Relieve en 3D, como un dron: arrastre con clic derecho (o Ctrl+arrastrar / dos dedos) para girar e inclinar, rueda para acercar.","3D terrain, like a drone: right-drag (or Ctrl+drag / two fingers) to rotate and tilt, scroll to zoom."

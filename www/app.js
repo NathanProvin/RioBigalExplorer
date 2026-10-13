@@ -15,6 +15,42 @@ $(document).on('shiny:connected', () => {
   new MutationObserver(ms => ms.forEach(m => m.addedNodes.forEach(n => n.nodeType === 1 && bigalApply(n))))
     .observe(document.body, { childList: true, subtree: true });
 });
+// 3D terrain view ("3D view" layer switch): MapLibre over the leaflet map, built on first use then shown/hidden
+let bigal3d = null;
+$(document).on('shiny:connected', () => Shiny.addCustomMessageHandler('map3d', m => {
+  document.body.classList.toggle('view3d', m.on);
+  if (!m.on || !window.maplibregl) return;
+  if (bigal3d) { bigal3d.resize(); return; }
+  const div = document.createElement('div'); div.className = 'map3d';
+  document.querySelector('.map-wrap').appendChild(div);
+  const lf = HTMLWidgets.find('#map').getMap(), c = lf.getCenter();
+  const dem = { type: 'raster-dem', encoding: 'terrarium', tileSize: 256, maxzoom: 15,  // AWS open terrain tiles (SRTM ~30 m), no key
+                tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'] };
+  bigal3d = new maplibregl.Map({
+    container: div, center: [c.lng, c.lat], zoom: lf.getZoom() - 0.5, pitch: 65, bearing: -20, maxPitch: 85,
+    preserveDrawingBuffer: true,  // lets the PDF export snapshot the WebGL canvas
+    style: {
+      version: 8,
+      sources: {
+        sat: { type: 'raster', tileSize: 256, maxzoom: 18, attribution: 'Esri World Imagery',
+               tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'] },
+        dem, shade: dem,  // separate source for hillshade, as MapLibre recommends
+        trails: { type: 'geojson', data: m.trails }, balises: { type: 'geojson', data: m.balises }
+      },
+      layers: [
+        { id: 'sat', type: 'raster', source: 'sat' },
+        { id: 'shade', type: 'hillshade', source: 'shade', paint: { 'hillshade-exaggeration': 0.35, 'hillshade-shadow-color': '#0e1f14' } },
+        { id: 'trails', type: 'line', source: 'trails', paint: { 'line-color': ['get', 'col'], 'line-width': 4, 'line-opacity': 0.95 },
+          layout: { 'line-join': 'round', 'line-cap': 'round' } },
+        { id: 'balises', type: 'circle', source: 'balises', paint: { 'circle-radius': 2.5, 'circle-color': ['get', 'col'],
+          'circle-stroke-color': '#fff', 'circle-stroke-width': 0.8 } }
+      ],
+      terrain: { source: 'dem', exaggeration: 1.5 },
+      sky: { 'sky-color': '#9CC3D9', 'horizon-color': '#F6F1E4', 'sky-horizon-blend': 0.6, 'fog-color': '#DCE6E0', 'fog-ground-blend': 0.4 }
+    }
+  });
+  bigal3d.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'bottom-right');
+}));
 // Camera drawer toggle (pure client side)
 $(document).on('click', '[data-toggle-drawer]', () => document.body.classList.toggle('drawer-open'));
 // Widgets initialised inside a hidden tab have zero width: re-measure when a tab is shown or a card goes full screen
@@ -39,7 +75,7 @@ $(document).on('click', '#pdf_export', async function () {
     const map = pane.querySelector('.map-wrap');
     const name = (document.querySelector('.navbar .nav-link.active')?.textContent || '').trim();
     const day = new Date().toISOString().slice(0, 10);
-    const skip = n => !(n.classList && n.matches('.toolbox, .drawer, .leaflet-control-zoom, .placing-banner, .info, .tooltip, .bslib-full-screen-enter'));
+    const skip = n => !(n.classList && n.matches('.toolbox, .drawer, .leaflet-control-zoom, .maplibregl-ctrl-group, .placing-banner, .info, .tooltip, .bslib-full-screen-enter'));
     const opts = { filter: skip, pixelRatio: 2, quality: .92, backgroundColor: '#F6F1E4',
                    fontEmbedCSS: await fontCSS() };
     const pdf = new jspdf.jsPDF({ orientation: map ? 'landscape' : 'portrait', unit: 'mm', format: 'a4' });

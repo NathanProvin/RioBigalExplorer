@@ -3368,10 +3368,10 @@
   },
   "files": {
     "app.R": {
-      "checksum": "6dc13d38cb9190ab32766b16b1887da0"
+      "checksum": "b03f603330ab46361209b5dfee48a065"
     },
     "i18n/translation.csv": {
-      "checksum": "9bdc0d303be4107dfdf61d01cbf7865e"
+      "checksum": "0b4970ab4f820dadf073873368501bc5"
     },
     "R/data_clean.R": {
       "checksum": "e8be41c35c264dc68e2041179b68459c"
@@ -3392,7 +3392,7 @@
       "checksum": "ff275bca97dcb209570c5cf336016da3"
     },
     "R/mod_map.R": {
-      "checksum": "a400a4c3f9e0aca92013139fc4492208"
+      "checksum": "2061b35272bb3c16c816e3d58ff2ba90"
     },
     "R/mod_stats.R": {
       "checksum": "37a336ce65b63c0442277d7cba034263"
@@ -3419,7 +3419,7 @@
       "checksum": "aceda8c4480f692cb8e2addcc061a1a1"
     },
     "www/app.js": {
-      "checksum": "49b2e6f7c853e9dde3a914005d054743"
+      "checksum": "ae9f7f75f78f54cd20720a1e038dbd7a"
     },
     "www/charts.js": {
       "checksum": "11ac73ec4f50fc6d89b48bd77e655973"
@@ -3830,7 +3830,7 @@
       "checksum": "93473fc6dabddb5e3de0ed006ae57a2c"
     },
     "www/styles.css": {
-      "checksum": "725c4d8250d52ef3068249936d2ab0b2"
+      "checksum": "73d0c69503d5b656ce8cc23f0ccb63a5"
     }
   },
   "users": null

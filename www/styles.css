@@ -350,3 +350,11 @@ body.drawer-open .drawer { transform: none; }
 .wx-tests { display: flex; flex-wrap: wrap; gap: .3rem .9rem; font-size: .72rem; color: var(--muted); }
 .wx-test.sig::after { content: " *"; }
 .wx-test.best { color: var(--green-dk); font-weight: 600; border-bottom: 2px solid var(--ochre); }
+/* sidebar credits */
+.credits { margin-top: auto; padding-top: .75rem; font-size: .75rem; color: var(--muted); }
+.credits a { color: var(--green); text-decoration: none; font-weight: 600; }
+.credits a .bi { margin-right: .2rem; }
+/* 3D terrain view: MapLibre layer over the leaflet map, under the toolbox (800) */
+.map-wrap > .map3d { position: absolute; inset: 0; z-index: 700; display: none; background: #0e1f14; }
+body.view3d .map-wrap > .map3d { display: block; }
+body.view3d .map-legend, body.view3d .map-count, body.view3d .leaflet-control-container { display: none; }

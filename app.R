@@ -31,6 +31,9 @@ ui <- page_navbar(
     # PDF export (client side snapshot of the current page)
     tags$script(src = "https://cdn.jsdelivr.net/npm/html-to-image@1.11.11/dist/html-to-image.js", defer = NA),
     tags$script(src = "https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js", defer = NA),
+    # 3D terrain view (map layers panel)
+    tags$script(src = "https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.js", defer = NA),
+    tags$link(rel = "stylesheet", href = "https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.css"),
     tags$link(rel = "icon", href = "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><circle cx='8' cy='8' r='7' fill='%231E4D2B'/></svg>")
   ),
   sidebar = sidebar(
@@ -45,7 +48,10 @@ ui <- page_navbar(
     tip(input_switch("f_threat", tagList(tags$span(class = "iucn-dot"), tt("threatened_only")), FALSE), "tip_f_threat"),
     tip(actionButton("f_reset", tagList(bsicons::bs_icon("arrow-counterclockwise"), tt("reset_filters")), class = "btn-reset w-100"), "tip_f_reset"),
     tags$hr(),
-    uiOutput("filter_summary")
+    uiOutput("filter_summary"),
+    tags$div(class = "credits", tt("made_by"), " Nathan Provin · ",
+             tags$a(href = "https://github.com/NathanProvin/RioBigalExplorer", target = "_blank", rel = "noopener",
+                    bsicons::bs_icon("github"), "GitHub"))
   ),
   nav_panel(tt("nav_map"), value = "map", icon = bsicons::bs_icon("globe-americas"), map_ui()),
   nav_panel(tt("nav_overview"), value = "overview", icon = bsicons::bs_icon("grid-1x2"), stats_ui$panorama()),

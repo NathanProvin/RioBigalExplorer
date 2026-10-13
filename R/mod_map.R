@@ -28,6 +28,7 @@ map_ui <- function() {
           sw("lyr_bal_names", "balise_names", "tip_lyr_bal_names", value = FALSE),
           sw("lyr_balises", "balises", "tip_lyr_balises", value = FALSE),
           sw("lyr_heat", "heatmap", "tip_lyr_heat", value = TRUE),
+          sw("lyr_3d", "view_3d", "tip_lyr_3d", value = FALSE),
           htmltools::hr(),
           tip(shiny::selectInput("color_by", tt("color_by"), choices = stats::setNames(COLOR_BY, vapply(paste0("cb_", COLOR_BY), tr, "")),
                                  selectize = FALSE), "tip_color_by", "right")
@@ -134,6 +135,20 @@ map_server <- function(input, output, session, obs, db, stations, lang, spn) {
   shiny::observeEvent(input$basemap, {
     other <- setdiff(c("sat", "topo"), input$basemap)
     leaflet::leafletProxy("map") |> leaflet::showGroup(input$basemap) |> leaflet::hideGroup(other)
+  }, ignoreInit = TRUE)
+
+  # 3D terrain view (www/app.js): MapLibre over the leaflet map, trails and balises draped on the relief
+  shiny::observeEvent(input$lyr_3d, {
+    if (!isTRUE(input$lyr_3d)) return(session$sendCustomMessage("map3d", list(on = FALSE)))
+    b <- db()$balises; b <- b[!is.na(b$lon) & !is.na(b$lat), ]
+    feat <- function(geom, props) list(type = "Feature", properties = props, geometry = geom)
+    col <- function(t) { v <- unname(TRAIL_COL[t]); ifelse(is.na(v), "#FFFFFF", v) }
+    trails <- lapply(unname(trail_lines(b)), function(ln)
+      feat(list(type = "LineString", coordinates = unname(Map(c, ln$lon, ln$lat))), list(col = col(ln$trail[1]))))
+    pts <- lapply(seq_len(nrow(b)), function(i)
+      feat(list(type = "Point", coordinates = c(b$lon[i], b$lat[i])), list(code = b$code[i], col = col(b$trail[i]))))
+    session$sendCustomMessage("map3d", list(on = TRUE, trails = list(type = "FeatureCollection", features = trails),
+                                            balises = list(type = "FeatureCollection", features = pts)))
   }, ignoreInit = TRUE)
 
   # Colour-by labels follow the language
